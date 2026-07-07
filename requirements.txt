@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlmodel
+pydantic-settings
+ollama
+numpy
+pytest
+pytest-asyncio
+ruff
