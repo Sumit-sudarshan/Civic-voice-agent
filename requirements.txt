@@ -3,7 +3,22 @@ uvicorn
 sqlmodel
 pydantic-settings
 ollama
+groq
 numpy
 pytest
 pytest-asyncio
+httpx
 ruff
+langdetect
+# Translation (Indic -> English only, see backend/app/pipeline/translation.py).
+# Install torch from the CPU-only wheel index to avoid pulling a multi-GB
+# CUDA build on a no-GPU machine:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+transformers
+sentencepiece
+# Pre/post-processing deps for the vendored IndicProcessor
+# (app/pipeline/_indic_processor.py) — used instead of the IndicTransToolkit
+# PyPI package, which only ships a Cython build requiring a C++ toolchain.
+indic-nlp-library
+sacremoses
+regex
