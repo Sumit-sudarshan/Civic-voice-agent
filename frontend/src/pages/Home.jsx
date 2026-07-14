@@ -98,7 +98,7 @@ export default function Home() {
   const [loadingStats, setLoadingStats] = useState(true);
   const [query, setQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ category: '', urgency: '', status: '', area: '' });
+  const [filters, setFilters] = useState({ category: '', urgency: '', status: '', area: '', timeRange: '' });
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const refreshToken = useRefreshToken();
@@ -113,10 +113,10 @@ export default function Home() {
       .finally(() => setLoadingStats(false));
   }, []);
 
-  // ── Load ALL issues, sorted by urgency (no top-N cap) ──
-  const loadTopIssues = useCallback((fetchArchived = false) => {
+  // ── Load ALL issues, sorted by most recent first (no top-N cap) ──
+  const loadTopIssues = useCallback((fetchArchived = false, timeRange = '') => {
     setLoadingTop(true);
-    fetchIssues({ submissionType: 'complaint', archived: fetchArchived })
+    fetchIssues({ submissionType: 'complaint', archived: fetchArchived, timeRange })
       .then(data => setTopData(data))
       .catch(console.error)
       .finally(() => setLoadingTop(false));
@@ -125,10 +125,11 @@ export default function Home() {
   // Re-run on mount or cache invalidation
   useEffect(() => { loadStats(); }, [loadStats, refreshToken]);
 
-  // Refetch issues when the status filter toggles between resolved and active
-  useEffect(() => { 
-    loadTopIssues(filters.status === 'resolved'); 
-  }, [loadTopIssues, refreshToken, filters.status]);
+  // Refetch issues when the status filter toggles between resolved and active,
+  // or when the time range changes (both are server-side filters).
+  useEffect(() => {
+    loadTopIssues(filters.status === 'resolved', filters.timeRange);
+  }, [loadTopIssues, refreshToken, filters.status, filters.timeRange]);
 
   // Reset how many rows are revealed whenever the underlying set or filters change
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [topData, query, filters]);
@@ -168,7 +169,7 @@ export default function Home() {
 
   const handleFilterChange = (key, value) => setFilters({ ...filters, [key]: value });
   const clearFilters = () => {
-    setFilters({ category: '', urgency: '', status: '', area: '' });
+    setFilters({ category: '', urgency: '', status: '', area: '', timeRange: '' });
     setQuery('');
   };
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
@@ -226,7 +227,7 @@ export default function Home() {
       <div className="w-full">
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold text-black uppercase tracking-wider">All Issues (by urgency)</h2>
+            <h2 className="text-xs font-bold text-black uppercase tracking-wider">All Issues</h2>
             {topData && (
               <span className="text-xs text-gray-400">
                 {filteredIssues.length} total · showing {visibleIssues.length}

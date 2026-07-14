@@ -4,6 +4,16 @@ import { SlidersHorizontal, X } from 'lucide-react';
 const CATEGORIES = ['roads', 'water', 'electricity', 'sanitation', 'education', 'healthcare', 'safety', 'other'];
 const URGENCY_LEVELS = ['critical', 'high', 'medium', 'low'];
 const STATUSES = ['open', 'in_progress', 'resolved'];
+// Same values as FloatingSummaryBot's time selector and the backend's
+// /stats cutoff convention, so "7D" means the identical window everywhere.
+const TIME_RANGES = [
+  { label: '24H', value: '24h' },
+  { label: '7D',  value: '7d' },
+  { label: '15D', value: '15d' },
+  { label: '1M',  value: '30d' },
+  { label: '6M',  value: '6mo' },
+  { label: '1Y',  value: '1y' },
+];
 
 /**
  * Reusable filter bar for the Complaints (and optionally Suggestions) page.
@@ -30,7 +40,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Category</label>
           <select
@@ -78,6 +88,18 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
             placeholder="e.g. Cotton Green"
             className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Time Range</label>
+          <select
+            value={filters.timeRange || ''}
+            onChange={(e) => onChange('timeRange', e.target.value)}
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+          >
+            <option value="">All time</option>
+            {TIME_RANGES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
         </div>
       </div>
     </div>

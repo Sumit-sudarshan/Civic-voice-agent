@@ -20,7 +20,7 @@ function Field({ label, value }) {
   );
 }
 
-export default function ExtractionFeedbackCard({ complaintId, submissionType }) {
+export default function ExtractionFeedbackCard({ complaintId, submissionType, onFeedbackGiven }) {
   const [record, setRecord] = useState(null);
   const [status, setStatus] = useState('analyzing'); // analyzing | ready | failed
   const [choice, setChoice] = useState(null);         // null | 'up' | 'down'
@@ -70,8 +70,10 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType }) 
         correction: isCorrect ? null : (correction.trim() || null),
       });
       setDone(true);
+      onFeedbackGiven?.();
     } catch {
       setDone(true); // don't trap the citizen on a failed feedback POST
+      onFeedbackGiven?.();
     } finally {
       setSubmitting(false);
     }

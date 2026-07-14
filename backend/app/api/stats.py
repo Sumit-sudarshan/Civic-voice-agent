@@ -15,15 +15,9 @@ from app.pipeline.facts import build_issue_facts
 router = APIRouter(prefix="/stats", tags=["Stats"])
 
 # ---------------------------------------------------------------------------
-# Urgency ordering map (lower = higher severity)
-# ---------------------------------------------------------------------------
-_URGENCY_ORDER = {
-    UrgencyLevel.critical: 0,
-    UrgencyLevel.high:     1,
-    UrgencyLevel.medium:   2,
-    UrgencyLevel.low:      3,
-    None:                  4,
-}
+# Same cutoff convention as /complaints and /stats/trends's own local map, so
+# a given time_range value means the identical window everywhere in the app.
+_TIME_RANGE_DAYS = {"24h": 1, "7d": 7, "15d": 15, "30d": 30, "6mo": 182, "1y": 365}
 
 # ---------------------------------------------------------------------------
 # In-memory 15-minute report cache
@@ -193,11 +187,12 @@ def get_issues(
     session:    Session = Depends(get_session),
     submission_type: str = Query("complaint", description="complaint | suggestion"),
     archived:   bool = Query(False, description="False (default) = active issues only; True = resolved/archived issues"),
+    time_range: Optional[str] = Query(None, description="24h | 7d | 15d | 30d | 6mo | 1y"),
 ):
     """
     Returns ALL valid, non-duplicate complaints or suggestions — no top-N cap
-    — ordered by urgency severity -> report_count -> created_at, for the
-    dashboard's full issue list (client-side filtered/paginated from there).
+    — ordered by most recent first, for the dashboard's full issue list
+    (client-side filtered/paginated from there).
 
     Resolved issues are archived: they're excluded from the default (active)
     list and only returned when archived=True, so the leader's main dashboard
@@ -221,11 +216,14 @@ def get_issues(
     else:
         items = [c for c in items if c.status != Status.resolved]
 
-    items.sort(key=lambda c: (
-        _URGENCY_ORDER.get(c.urgency_level, 4),
-        -(c.report_count or 1),
-        -(c.created_at.timestamp() if c.created_at else 0),
-    ))
+    days = _TIME_RANGE_DAYS.get(time_range)
+    if days:
+        def _aware(dt):
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        items = [c for c in items if c.created_at and _aware(c.created_at) >= cutoff]
+
+    items.sort(key=lambda c: -(c.created_at.timestamp() if c.created_at else 0))
 
     issues_data = [
         {

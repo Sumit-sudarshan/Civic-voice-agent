@@ -1,5 +1,5 @@
 """
-Cheap, LLM-free language identification (Roadmap Phase 14) — runs before any
+Cheap, LLM-free language identification — runs before any
 LLM call so `language_detected` is populated for logging/analytics even if
 every downstream stage later fails.
 

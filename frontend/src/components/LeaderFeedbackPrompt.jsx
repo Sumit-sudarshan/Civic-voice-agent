@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { ThumbsUp, ThumbsDown, Sparkles, Check, X } from 'lucide-react';
 import { sendExtractionFeedback } from '../api/client';
-import { pickLeaderFeedbackAspect, buildQuestion } from '../api/leaderFeedback';
+import { pickLeaderFeedbackAspect, buildQuestion, hasAnsweredLeaderFeedback, markLeaderFeedbackAnswered } from '../api/leaderFeedback';
 
-// A quiet, occasional spot-check shown to the leader inside an expanded issue.
-// It asks ONE rotating question (labelling / summary / affected+ask), at most
-// once every cooldown window (see leaderFeedback.js) — so it gathers real
-// domain-expert ground truth without ever nagging.
+// A spot-check shown to the leader inside an expanded issue, asking ONE
+// rotating question (labelling / summary / affected+ask). Shows reliably every
+// time an eligible issue is expanded, and disappears for good once the leader
+// answers or dismisses it for that complaint — same persisted-once-answered
+// pattern as the citizen-side ExtractionFeedbackCard.
 export default function LeaderFeedbackPrompt({ issue }) {
-  const eligible = issue?.pipeline_status === 'done' && issue?.is_valid_submission === true;
+  const eligible = issue?.pipeline_status === 'done'
+    && issue?.is_valid_submission === true
+    && !hasAnsweredLeaderFeedback(issue.id);
 
   // Decide once per mount whether (and what) to ask. Lazy init so it doesn't
   // re-roll on every render and only "spends" an eligibility slot when eligible.
@@ -32,6 +35,7 @@ export default function LeaderFeedbackPrompt({ issue }) {
     finally {
       setSubmitting(false);
       setPhase('done');
+      markLeaderFeedbackAnswered(issue.id);
     }
   };
 
@@ -54,7 +58,7 @@ export default function LeaderFeedbackPrompt({ issue }) {
           </p>
         </div>
         <button
-          onClick={() => setPhase('dismissed')}
+          onClick={() => { setPhase('dismissed'); markLeaderFeedbackAnswered(issue.id); }}
           className="text-gray-400 hover:text-gray-700 shrink-0"
           title="Dismiss"
         >

@@ -6,7 +6,9 @@ class ExtractionResponse(BaseModel):
                           "address/area/pincode with any extra detail from the text."
     )
     issue_summary: str = Field(
-        ..., description="A concise 1-2 sentence summary of the core issue or suggestion."
+        ..., description="A concise 1-2 sentence summary of WHAT is wrong and WHY it matters (cause, "
+                          "severity, risk, or scale) — not where it is. Never repeat a landmark or "
+                          "place name already captured in the 'location' field."
     )
     affected_parties: str = Field(
         ..., description="Who is specifically impacted. Prefer the exact group named in the text over a "
@@ -29,6 +31,11 @@ RULES:
 4. The citizen's text may be in Hindi, Marathi, English, or Hinglish (English/Hindi mixed, Latin
    script). Understand it regardless of language, but always write all four output fields in English —
    never leave a field in Hindi/Marathi or copy Devanagari script into the output.
+5. 'location' and 'issue_summary' must never overlap. Every landmark/place word (e.g. "near the
+   school gate", "ATM on Park Street") belongs in 'location' ONLY — do not repeat it inside
+   'issue_summary'. Instead, use that space in 'issue_summary' to say what is actually wrong: the
+   cause, the danger/severity, or the scale (e.g. "live wire is exposed and could electrocute
+   someone" beats "hazard near the school gate" — the reader already knows where it is).
 
 INFERENCE RULES (read carefully — this is the most important part):
 - For 'affected_parties': Be specific and correct — this is read by a leader deciding who to worry about, not filler text.
@@ -98,6 +105,10 @@ Answer: {"location": "Rohini", "issue_summary": "No water supply for three days.
 EXAMPLE 8 (text names a specific group — keep it specific, do NOT generalize to "residents"):
 Input: "This is unacceptable, the water tanker for Adyar hasn't shown up in 4 days and we have babies at home, what exactly are we supposed to do?!"
 Answer: {"location": "Adyar", "issue_summary": "Water tanker has not arrived for 4 days.", "affected_parties": "Families with babies in Adyar", "ask": "Restore water supply to Adyar."}
+
+EXAMPLE 9 (landmark goes in 'location' ONLY — issue_summary explains the danger/cause instead of repeating it):
+Input: "There's a live wire hanging loose near the school gate on Anna Nagar main road, someone is going to get electrocuted."
+Answer: {"location": "Anna Nagar main road, near the school gate", "issue_summary": "A live wire is exposed and hanging loose, posing an electrocution risk.", "affected_parties": "Students, parents, and school staff", "ask": "Immediately de-energize and repair the exposed wire."}
 
 ---
 CURRENT INPUT (extract this only, do not repeat example data):

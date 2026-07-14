@@ -25,3 +25,28 @@ export function removeTrackedSubmissions(user, ids) {
   localStorage.setItem(storageKey(user), JSON.stringify(remaining));
   return remaining;
 }
+
+// Tracks which submissions the citizen has already given extraction feedback
+// on, so the "did we understand this correctly?" prompt (normally only ever
+// shown once, inside the just-submitted chat modal) can also surface later in
+// the tracker list without re-asking forever once answered.
+const FEEDBACK_GIVEN_KEY = 'civic_feedback_given_ids';
+
+function getFeedbackGivenIds() {
+  try {
+    const raw = localStorage.getItem(FEEDBACK_GIVEN_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function hasFeedback(id) {
+  return getFeedbackGivenIds().has(id);
+}
+
+export function markFeedbackGiven(id) {
+  const ids = getFeedbackGivenIds();
+  ids.add(id);
+  localStorage.setItem(FEEDBACK_GIVEN_KEY, JSON.stringify([...ids]));
+}

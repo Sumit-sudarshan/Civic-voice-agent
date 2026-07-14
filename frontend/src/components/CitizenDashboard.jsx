@@ -1,18 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Home, LogOut, FileText, AlertTriangle, Clock, RefreshCw, MessageSquareText } from 'lucide-react';
+import { Home, LogOut, FileText, AlertTriangle, Clock, RefreshCw, MessageSquareText, ChevronDown, ChevronUp } from 'lucide-react';
 import { fetchSubmissionStatus } from '../api/client';
 import { getRejectionMessage } from '../api/rejectionMessages';
-import { getTrackedSubmissions, removeTrackedSubmissions } from '../api/trackedSubmissions';
+import { getTrackedSubmissions, removeTrackedSubmissions, hasFeedback, markFeedbackGiven } from '../api/trackedSubmissions';
 import { getIdentity } from '../api/identity';
 import ChatIntake from './ChatIntake';
+import ExtractionFeedbackCard from './ExtractionFeedbackCard';
 
 function SubmissionTracker({ user, type }) {
   const [tracked, setTracked]   = useState(() => getTrackedSubmissions(user).filter(t => t.type === type));
   const [statuses, setStatuses] = useState({}); // id -> live submission record
   const [loading, setLoading]   = useState(true);
+  // Tracks which rows have already had extraction feedback given, so the
+  // "did we understand this correctly?" card disappears for good once answered
+  // (persisted via api/trackedSubmissions.js so it survives a page reload).
+  const [givenIds, setGivenIds] = useState(() => new Set());
+  const feedbackAnswered = (id) => givenIds.has(id) || hasFeedback(id);
+  // Which rows are expanded to show "what our system understood" — collapsed
+  // by default, same pattern as the leader dashboard's IssueRow.
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const toggleExpanded = (id) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
-  const loadStatuses = async (list = tracked) => {
-    setLoading(true);
+  const loadStatuses = async (list = tracked, { silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const results = await Promise.all(
       list.map(async (t) => {
         try {
@@ -30,7 +46,7 @@ function SubmissionTracker({ user, type }) {
     }
 
     setStatuses(Object.fromEntries(results.filter(([, , gone]) => !gone).map(([id, status]) => [id, status])));
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
@@ -40,6 +56,21 @@ function SubmissionTracker({ user, type }) {
     loadStatuses(filtered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, type]);
+
+  // Auto-poll every 3s in the background while anything is still pending/processing,
+  // so "Analyzing..." clears on its own instead of requiring a manual Refresh click.
+  useEffect(() => {
+    if (tracked.length === 0) return undefined;
+    const interval = setInterval(() => {
+      const stillAnalyzing = tracked.some((t) => {
+        const s = statuses[t.id];
+        return !s || s.pipeline_status === 'pending' || s.pipeline_status === 'processing';
+      });
+      if (stillAnalyzing) loadStatuses(tracked, { silent: true });
+    }, 3000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracked, statuses]);
 
   if (tracked.length === 0) {
     return (
@@ -62,13 +93,20 @@ function SubmissionTracker({ user, type }) {
         const isAnalyzing = s && (s.pipeline_status === 'pending' || s.pipeline_status === 'processing');
         const rejected = s && s.pipeline_status === 'done' && s.is_valid_submission === false;
         const rejection = rejected ? getRejectionMessage(s.review_reason) : null;
+        // Whether there's anything worth expanding for: either the AI's
+        // understanding of a valid submission, or a rejection explanation.
+        const canExpand = !isAnalyzing && !hasError && !!s && (s.is_valid_submission === true || rejected);
+        const expanded = expandedIds.has(t.id);
 
         return (
-          <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-start justify-between gap-3">
+          <div key={t.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div
+              className={`p-4 flex items-start justify-between gap-3 ${canExpand ? 'cursor-pointer' : ''}`}
+              onClick={() => canExpand && toggleExpanded(t.id)}
+            >
               <div className="min-w-0">
                 <p className="text-xs text-gray-400 font-mono mb-1">{t.id}</p>
-                <p className="text-sm text-black font-medium truncate">
+                <p className="text-sm text-black font-medium line-clamp-2">
                   {s?.extracted_issue_summary || t.preview}
                 </p>
                 <p className="text-[11px] text-gray-400 mt-1">
@@ -76,35 +114,60 @@ function SubmissionTracker({ user, type }) {
                 </p>
               </div>
 
-              {isAnalyzing && !loading && (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-blue-50 text-blue-600 border-blue-200 shrink-0">
-                  <Clock className="w-3 h-3" /> Analyzing…
-                </span>
-              )}
-              {hasError && !loading && (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-50 text-red-600 border-red-200 shrink-0">
-                  <AlertTriangle className="w-3 h-3" /> Error
-                </span>
-              )}
-              {loading && (
-                <span className="text-[10px] text-gray-400 shrink-0">Loading…</span>
-              )}
-              {!isAnalyzing && !hasError && rejected && (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${rejection?.tone === 'emergency' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                  Not Registered
-                </span>
-              )}
-              {!isAnalyzing && !hasError && s && s.is_valid_submission === true && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-green-50 text-green-700 border-green-200 capitalize shrink-0">
-                  {s.status}
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {isAnalyzing && !loading && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-blue-50 text-blue-600 border-blue-200 shrink-0">
+                    <Clock className="w-3 h-3" /> Analyzing…
+                  </span>
+                )}
+                {hasError && !loading && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-50 text-red-600 border-red-200 shrink-0">
+                    <AlertTriangle className="w-3 h-3" /> Error
+                  </span>
+                )}
+                {loading && (
+                  <span className="text-[10px] text-gray-400 shrink-0">Loading…</span>
+                )}
+                {!isAnalyzing && !hasError && rejected && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${rejection?.tone === 'emergency' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    Not Registered
+                  </span>
+                )}
+                {!isAnalyzing && !hasError && s && s.is_valid_submission === true && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-green-50 text-green-700 border-green-200 capitalize shrink-0">
+                    {s.status}
+                  </span>
+                )}
+                {!isAnalyzing && !hasError && s && s.is_valid_submission === true && !feedbackAnswered(t.id) && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#0e75c6]" title="Feedback requested" />
+                )}
+                {canExpand && (
+                  <button className="text-gray-400 hover:text-black transition-colors">
+                    {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                )}
+              </div>
             </div>
 
-            {!isAnalyzing && !hasError && rejected && rejection && (
-              <div className={`mt-3 flex items-start gap-2 p-2.5 rounded border ${rejection.tone === 'emergency' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-                <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${rejection.tone === 'emergency' ? 'text-red-500' : 'text-amber-500'}`} />
-                <p className="text-xs text-gray-700">{rejection.body}</p>
+            {expanded && (
+              <div className="border-t border-gray-100 bg-gray-50 p-4">
+                {rejected && rejection && (
+                  <div className={`flex items-start gap-2 p-2.5 rounded border ${rejection.tone === 'emergency' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                    <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${rejection.tone === 'emergency' ? 'text-red-500' : 'text-amber-500'}`} />
+                    <p className="text-xs text-gray-700">{rejection.body}</p>
+                  </div>
+                )}
+
+                {s && s.is_valid_submission === true && (
+                  <ExtractionFeedbackCard
+                    complaintId={t.id}
+                    submissionType={t.type}
+                    onFeedbackGiven={() => {
+                      markFeedbackGiven(t.id);
+                      setGivenIds((prev) => new Set(prev).add(t.id));
+                    }}
+                  />
+                )}
               </div>
             )}
 

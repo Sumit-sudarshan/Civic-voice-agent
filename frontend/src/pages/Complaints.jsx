@@ -26,7 +26,7 @@ export default function Complaints() {
   const [loading, setLoading]       = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [query, setQuery]           = useState('');
-  const [filters, setFilters]       = useState({ category: '', urgency: '', status: '', area: '' });
+  const [filters, setFilters]       = useState({ category: '', urgency: '', status: '', area: '', timeRange: '' });
 
   const refreshToken   = useRefreshToken();
   const debouncedQuery = useDebounce(query, 300);
@@ -38,8 +38,9 @@ export default function Complaints() {
       if (q)          params.q = q;
       if (f.category) params.category = f.category;
       if (f.urgency)  params.urgency = f.urgency;
-      if (f.status)   params.status = f.status;
-      if (f.area)     params.area = f.area;
+      if (f.status)    params.status = f.status;
+      if (f.area)      params.area = f.area;
+      if (f.timeRange) params.timeRange = f.timeRange;
       setComplaints(await fetchComplaints(params));
     } catch (err) {
       console.error(err);
@@ -70,7 +71,7 @@ export default function Complaints() {
   };
 
   const clearFilters = () => {
-    const cleared = { category: '', urgency: '', status: '', area: '' };
+    const cleared = { category: '', urgency: '', status: '', area: '', timeRange: '' };
     setFilters(cleared);
     setQuery('');
     load('', cleared);

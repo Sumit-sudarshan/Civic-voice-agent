@@ -13,12 +13,13 @@ export async function fetchStatsSummary() {
 }
 
 /**
- * Fetch ALL valid, non-duplicate issues (no top-N cap), sorted by urgency.
- * @param {Object} params - { submissionType: 'complaint' | 'suggestion' }
+ * Fetch ALL valid, non-duplicate issues (no top-N cap), sorted by most recent first.
+ * @param {Object} params - { submissionType: 'complaint' | 'suggestion', archived, timeRange }
  */
-export async function fetchIssues({ submissionType = 'complaint', archived = false } = {}) {
+export async function fetchIssues({ submissionType = 'complaint', archived = false, timeRange = '' } = {}) {
   const params = new URLSearchParams({ submission_type: submissionType });
   if (archived) params.set('archived', 'true');
+  if (timeRange) params.set('time_range', timeRange);
   const res = await fetch(`${API_BASE}/stats/issues?${params}`);
   if (!res.ok) throw new Error('Failed to fetch issues');
   return res.json();
@@ -44,15 +45,16 @@ export async function fetchTrends(timeRange = 'all') {
 
 /**
  * Fetch complaints with optional filter params.
- * @param {Object} params - { q, category, urgency, status, area }
+ * @param {Object} params - { q, category, urgency, status, area, timeRange }
  */
 export async function fetchComplaints(params = {}) {
   const p = new URLSearchParams();
-  if (params.q)        p.set('q', params.q);
-  if (params.category) p.set('category', params.category);
-  if (params.urgency)  p.set('urgency', params.urgency);
-  if (params.status)   p.set('status', params.status);
-  if (params.area)     p.set('area', params.area);
+  if (params.q)         p.set('q', params.q);
+  if (params.category)  p.set('category', params.category);
+  if (params.urgency)   p.set('urgency', params.urgency);
+  if (params.status)    p.set('status', params.status);
+  if (params.area)      p.set('area', params.area);
+  if (params.timeRange) p.set('time_range', params.timeRange);
   const qs = p.toString();
   const res = await fetch(`${API_BASE}/complaints${qs ? '?' + qs : ''}`);
   if (!res.ok) throw new Error('Failed to fetch complaints');

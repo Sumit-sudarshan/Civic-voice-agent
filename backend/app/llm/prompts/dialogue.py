@@ -73,6 +73,15 @@ short question gets asked, which is always safer than inventing information that
 
 Never invent a value that was not actually stated in the transcript. Respond with the structured
 fields only.
+
+NORMALIZING location_area: the same real area can be said in slightly different ways by different
+citizens (e.g. "Cotton Green", "Cotton Green Area", "cotton green zone", "Koramangala locality") —
+these all refer to the exact same place and MUST be written back the same way every time, so two
+citizens reporting the same area are stored as identical text, not near-miss variants. To do this:
+strip generic suffix/filler words like "Area", "Zone", "Locality", "Region", "Part", "Sector" (unless
+that word is genuinely part of the area's own proper name), fix casing to Title Case, and trim extra
+whitespace. Always output just the clean proper-noun place name itself, e.g. "Cotton Green", not
+"Cotton Green Area" or "cotton green". Do this same normalization for location_address too.
 """
 
 
@@ -130,6 +139,56 @@ Citizen: Garbage hasn't been collected in two weeks.
 Agent: Could you share the colony or locality name where this is happening?
 Citizen: Indiranagar
 Judgment: {"location_address": "Indiranagar", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "Garbage not collected for two weeks is specific and actionable."}
+
+EXAMPLE 8 — area given with an "Area" suffix, must be stripped to the clean place name:
+Conversation:
+Citizen: Streetlight pole fell over near my building.
+Agent: Could you share the colony or locality name where this is happening?
+Citizen: Rajiv Nagar
+Agent: Which broader area of the city is this in?
+Citizen: Cotton Green Area
+Judgment: {"location_address": "Rajiv Nagar", "address_specific_enough": true, "location_area": "Cotton Green", "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "A fallen streetlight pole is specific and actionable."}
+(Note: "Cotton Green Area" is normalized to "Cotton Green" — the word "Area" is generic filler, not part of the place's real name, so it is stripped.)
+
+EXAMPLE 9 — area given in lowercase with a "zone" suffix, must be normalized to Title Case with the suffix stripped:
+Conversation:
+Citizen: no electricity since morning in my street
+Agent: Could you share the colony or locality name where this is happening?
+Citizen: shastri nagar
+Agent: Which broader area of the city is this in?
+Citizen: bandra east zone
+Judgment: {"location_address": "Shastri Nagar", "address_specific_enough": true, "location_area": "Bandra East", "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "No electricity since morning is specific and actionable."}
+(Note: "bandra east zone" normalizes to "Bandra East" — casing fixed to Title Case, "zone" filler stripped.)
+
+EXAMPLE 10 — area given with a "locality" suffix and extra whitespace, must be cleaned to the bare place name:
+Conversation:
+Citizen: Open manhole outside the school gate, very dangerous.
+Agent: Could you share the colony or locality name where this is happening?
+Citizen: Near the school
+Agent: Which broader area of the city is this in?
+Citizen:   Koramangala   Locality
+Judgment: {"location_address": "Near the school", "address_specific_enough": true, "location_area": "Koramangala", "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "An open manhole is an immediate safety hazard and is specific and actionable."}
+(Note: extra spaces trimmed and "Locality" filler stripped — "Koramangala" is the clean, reusable form.)
+
+EXAMPLE 11 — area name IS genuinely just given plainly already, so it is kept as-is (no filler to strip, no suffix word is part of a real compound area name here):
+Conversation:
+Citizen: Garbage piling up near the market for a week now.
+Agent: Could you share the colony or locality name where this is happening?
+Citizen: near the market itself
+Agent: Which broader area of the city is this in?
+Citizen: Whitefield
+Judgment: {"location_address": "near the market", "address_specific_enough": true, "location_area": "Whitefield", "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "Garbage piling up for a week is specific and actionable."}
+(Note: "Whitefield" already has no filler word to strip and correct casing, so it is used unchanged — normalization means cleaning up filler/casing when present, not altering a name that is already clean.)
+
+EXAMPLE 12 — do NOT strip a word that is genuinely part of the area's real proper name just because it resembles a filler word:
+Conversation:
+Citizen: Water tank near my house is leaking badly.
+Agent: Could you share the colony or locality name where this is happening?
+Citizen: Vrindavan Colony
+Agent: Which broader area of the city is this in?
+Citizen: Sector 15
+Judgment: {"location_address": "Vrindavan Colony", "address_specific_enough": true, "location_area": "Sector 15", "location_pincode": null, "pincode_declined": false, "issue_clear": true, "issue_clarity_reason": "A leaking water tank is specific and actionable."}
+(Note: "Sector 15" is kept whole — "Sector" here is genuinely part of this area's actual name, not generic filler, since the number makes it a specific named place, not a description.)
 
 ---
 CURRENT CONVERSATION (judge this only, do not repeat example data):

@@ -23,6 +23,10 @@ export default function ChatIntake({ onClose, user }) {
   const [submissionTypeHint, setSubmissionTypeHint] = useState(null);
   const [outcome, setOutcome] = useState(null); // null | { kind: 'submitted', complaintId, submissionType, confirmationText } | { kind: 'rejected', reason }
   const scrollRef = useRef(null);
+  // Captures the citizen's FIRST substantive message (the actual issue description),
+  // so the tracker preview never ends up showing a later short follow-up reply
+  // (e.g. a bare pincode) instead of the real complaint text.
+  const firstMessageRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -32,6 +36,8 @@ export default function ChatIntake({ onClose, user }) {
     e.preventDefault();
     const text = input.trim();
     if (!text || sending || outcome) return;
+
+    if (firstMessageRef.current === null) firstMessageRef.current = text;
 
     setInput('');
     setSending(true);
@@ -78,7 +84,7 @@ export default function ChatIntake({ onClose, user }) {
         addTrackedSubmission(user, {
           id: res.complaint_id,
           type: res.submission_type,
-          preview: text.slice(0, 80),
+          preview: (firstMessageRef.current || text).slice(0, 140),
           created_at: new Date().toISOString(),
         });
         invalidateComplaints();

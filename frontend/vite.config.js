@@ -12,7 +12,8 @@ export default defineConfig({
           setTimeout(() => {
             const port = server.config.server.port || 5173;
             console.log('\n   Citizen Voice Form:  http://localhost:' + port + '/');
-            console.log('   Leader Dashboard:     http://localhost:' + port + '/dashboard\n');
+            console.log('   Leader Dashboard:     http://localhost:' + port + '/dashboard');
+            console.log('   Evaluation Console:   http://localhost:' + port + '/internal-eval\n');
           }, 100);
         });
       }
