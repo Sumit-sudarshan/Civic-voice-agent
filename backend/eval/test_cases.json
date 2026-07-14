@@ -1,0 +1,452 @@
+[
+  {
+    "id": 1,
+    "raw_text": "Massive pothole on MG Road outside the bakery, a car just blew its tire.",
+    "is_valid_submission": true,
+    "category": "roads",
+    "urgency": "critical",
+    "duplicate_group_id": "pothole_mg",
+    "ward": 1,
+    "location": "Ambedkar Nagar"
+  },
+  {
+    "id": 2,
+    "raw_text": "Please fix the pothole on MG Road near the bakery, it's getting big.",
+    "is_valid_submission": true,
+    "category": "roads",
+    "urgency": "medium",
+    "duplicate_group_id": "pothole_mg",
+    "ward": 2,
+    "location": "Saraswati Vihar"
+  },
+  {
+    "id": 3,
+    "raw_text": "Hey I want to order a pizza to 5th avenue.",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Shastri Nagar"
+  },
+  {
+    "id": 4,
+    "raw_text": "The streetlight at 1st cross and main street has been out for 3 days. Very dark at night.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Koramangala"
+  },
+  {
+    "id": 5,
+    "raw_text": "No water since morning in sector 4. Families are struggling.",
+    "is_valid_submission": true,
+    "category": "water",
+    "urgency": "critical",
+    "duplicate_group_id": "water_sec4",
+    "ward": 5,
+    "location": "HSR Layout"
+  },
+  {
+    "id": 6,
+    "raw_text": "Sector 4 has no water supply today.",
+    "is_valid_submission": true,
+    "category": "water",
+    "urgency": "high",
+    "duplicate_group_id": "water_sec4",
+    "ward": 6,
+    "location": "Velachery"
+  },
+  {
+    "id": 7,
+    "raw_text": "Garbage hasn't been collected from Green Glen Layout for a week. The smell is awful and stray dogs are tearing the bags.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "high",
+    "duplicate_group_id": "garbage_ggl",
+    "ward": 1,
+    "location": "Indira Colony"
+  },
+  {
+    "id": 8,
+    "raw_text": "Fix it please.",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Laxmi Nagar"
+  },
+  {
+    "id": 9,
+    "raw_text": "The primary school roof in ward 5 is leaking terribly in the rain. Students are getting wet.",
+    "is_valid_submission": true,
+    "category": "education",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Ashok Vihar"
+  },
+  {
+    "id": 10,
+    "raw_text": "The local clinic doesn't have enough doctors on weekends. Long queues every Saturday.",
+    "is_valid_submission": true,
+    "category": "healthcare",
+    "urgency": "medium",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Gachibowli"
+  },
+  {
+    "id": 11,
+    "raw_text": "I lost my dog near the park. Please help.",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 5,
+    "location": "Whitefield"
+  },
+  {
+    "id": 12,
+    "raw_text": "Open manhole on 12th main! Very dangerous for pedestrians at night.",
+    "is_valid_submission": true,
+    "category": "safety",
+    "urgency": "critical",
+    "duplicate_group_id": "manhole_12th",
+    "ward": 6,
+    "location": "Adyar"
+  },
+  {
+    "id": 13,
+    "raw_text": "There's an uncovered drain on 12th main road, someone might fall in.",
+    "is_valid_submission": true,
+    "category": "safety",
+    "urgency": "high",
+    "duplicate_group_id": "manhole_12th",
+    "ward": 1,
+    "location": "Rajendra Nagar"
+  },
+  {
+    "id": 14,
+    "raw_text": "Can we get a new park bench in Gandhi park? The old one is broken.",
+    "is_valid_submission": true,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Jubilee Hills"
+  },
+  {
+    "id": 15,
+    "raw_text": "Thank you so much for fixing the streetlight yesterday! You guys are amazing!",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Indira Colony"
+  },
+  {
+    "id": 16,
+    "raw_text": "I suggest we implement a monthly recycling drive in the neighbourhood.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Banjara Hills"
+  },
+  {
+    "id": 17,
+    "raw_text": "You guys are totally useless and never do anything right!",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 5,
+    "location": "Jayanagar"
+  },
+  {
+    "id": 18,
+    "raw_text": "You guys are totally useless! The water pipe on 4th cross is completely burst and flooding the entire street!",
+    "is_valid_submission": true,
+    "category": "water",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 6,
+    "location": "T Nagar"
+  },
+  {
+    "id": 19,
+    "raw_text": "Voltage fluctuations in Phase 2 are damaging appliances. AC compressors are burning out.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 1,
+    "location": "Saraswati Vihar"
+  },
+  {
+    "id": 20,
+    "raw_text": "Need more books in the community library. The shelves are half empty.",
+    "is_valid_submission": true,
+    "category": "education",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Shastri Nagar"
+  },
+  {
+    "id": 21,
+    "raw_text": "Ambulances can't reach the inner streets of ward 3 because of illegal parking.",
+    "is_valid_submission": true,
+    "category": "healthcare",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Koramangala"
+  },
+  {
+    "id": 22,
+    "raw_text": "Cars parked illegally on the lane in ward 3 block emergency vehicles.",
+    "is_valid_submission": true,
+    "category": "healthcare",
+    "urgency": "medium",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Jubilee Hills"
+  },
+  {
+    "id": 23,
+    "raw_text": "Road near the school gate has no speed breaker. Kids are at risk.",
+    "is_valid_submission": true,
+    "category": "safety",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 5,
+    "location": "Indiranagar"
+  },
+  {
+    "id": 24,
+    "raw_text": "Water is coming out brown and smells bad in Jayanagar. Not drinkable.",
+    "is_valid_submission": true,
+    "category": "water",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 6,
+    "location": "Anna Nagar"
+  },
+  {
+    "id": 25,
+    "raw_text": "The park tap is slightly dripping. Nothing urgent but waste of water.",
+    "is_valid_submission": true,
+    "category": "water",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 1,
+    "location": "Laxmi Nagar"
+  },
+  {
+    "id": 26,
+    "raw_text": "Power cut since 2 days in BTM Layout. Everything is affected including refrigerators.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Ashok Vihar"
+  },
+  {
+    "id": 27,
+    "raw_text": "The transformer in our lane sparked last night. It could catch fire.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "critical",
+    "duplicate_group_id": "transformer_spark",
+    "ward": 3,
+    "location": "Gachibowli"
+  },
+  {
+    "id": 28,
+    "raw_text": "There were sparks from the electricity box near lane 4 last evening.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "high",
+    "duplicate_group_id": "transformer_spark",
+    "ward": 4,
+    "location": "Whitefield"
+  },
+  {
+    "id": 29,
+    "raw_text": "Our ward has no proper dustbins. Everyone dumps garbage on the road.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "medium",
+    "duplicate_group_id": "garbage_ggl",
+    "ward": 5,
+    "location": "Koramangala"
+  },
+  {
+    "id": 30,
+    "raw_text": "No garbage collection in Green Glen for days. Rats everywhere.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "high",
+    "duplicate_group_id": "garbage_ggl",
+    "ward": 6,
+    "location": "HSR Layout"
+  },
+  {
+    "id": 31,
+    "raw_text": "Can someone check on the elderly uncle who lives alone at house 23?",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 1,
+    "location": "Gandhi Nagar"
+  },
+  {
+    "id": 32,
+    "raw_text": "Road caved in near overbridge after heavy rain. Traffic is completely blocked.",
+    "is_valid_submission": true,
+    "category": "roads",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Indira Colony"
+  },
+  {
+    "id": 33,
+    "raw_text": "Small crack appeared in the road near the overbridge. Might become bigger.",
+    "is_valid_submission": true,
+    "category": "roads",
+    "urgency": "medium",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Banjara Hills"
+  },
+  {
+    "id": 34,
+    "raw_text": "The mid-day meal at government school is substandard and portions are tiny.",
+    "is_valid_submission": true,
+    "category": "education",
+    "urgency": "medium",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Jayanagar"
+  },
+  {
+    "id": 35,
+    "raw_text": "The anganwadi center in ward 2 has been closed for a week. Children are not getting meals.",
+    "is_valid_submission": true,
+    "category": "education",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 5,
+    "location": "T Nagar"
+  },
+  {
+    "id": 36,
+    "raw_text": "Sewage water is overflowing on the street near the bus stop since yesterday.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 6,
+    "location": "Whitefield"
+  },
+  {
+    "id": 37,
+    "raw_text": "Are the council offices open on Sunday? I need to submit a document.",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 1,
+    "location": "Shivaji Road"
+  },
+  {
+    "id": 38,
+    "raw_text": "There is a stray dog pack near the primary school that is chasing children every morning.",
+    "is_valid_submission": true,
+    "category": "safety",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Rajendra Nagar"
+  },
+  {
+    "id": 39,
+    "raw_text": "The hospital ambulance bay is broken and the ramp is cracked. Stretchers can't be wheeled.",
+    "is_valid_submission": true,
+    "category": "healthcare",
+    "urgency": "critical",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Jubilee Hills"
+  },
+  {
+    "id": 40,
+    "raw_text": "The dispensary near Tilak Nagar runs out of medicines every week before Friday.",
+    "is_valid_submission": true,
+    "category": "healthcare",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 4,
+    "location": "Indiranagar"
+  },
+  {
+    "id": 41,
+    "raw_text": "Everything here is broken. Nothing works. When will you people do your job?",
+    "is_valid_submission": false,
+    "category": "other",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 5,
+    "location": "Anna Nagar"
+  },
+  {
+    "id": 42,
+    "raw_text": "The road marking on the main highway has completely faded. Lane discipline is impossible.",
+    "is_valid_submission": true,
+    "category": "roads",
+    "urgency": "medium",
+    "duplicate_group_id": null,
+    "ward": 6,
+    "location": "Mylapore"
+  },
+  {
+    "id": 43,
+    "raw_text": "One streetlight is slightly dim on my lane. Not urgent but please note.",
+    "is_valid_submission": true,
+    "category": "electricity",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 1,
+    "location": "Ambedkar Nagar"
+  },
+  {
+    "id": 44,
+    "raw_text": "I would like to suggest setting up a reading corner in the park for children.",
+    "is_valid_submission": true,
+    "category": "education",
+    "urgency": "low",
+    "duplicate_group_id": null,
+    "ward": 2,
+    "location": "Saraswati Vihar"
+  },
+  {
+    "id": 45,
+    "raw_text": "The public toilet near the market is completely unusable. It is overflowing and no one cleans it.",
+    "is_valid_submission": true,
+    "category": "sanitation",
+    "urgency": "high",
+    "duplicate_group_id": null,
+    "ward": 3,
+    "location": "Shastri Nagar"
+  }
+]
