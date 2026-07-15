@@ -29,13 +29,13 @@ The whole system can run fully offline on a normal laptop using local models thr
 
 ## What the system does
 
-The application has three separate surfaces:
+The application has three separate surfaces, all served by the same frontend dev server once it is running (see [Running the application](#running-the-application) for the exact URLs):
 
-1. **Citizen portal.** A citizen logs in, starts a chat, and describes an issue. A conversational agent asks clarifying questions (for example, the exact address, the area, and the pincode), then confirms the submission. The citizen can track the status of past submissions.
+1. **Citizen portal**, at `http://localhost:5173/`. A citizen logs in, starts a chat, and describes an issue. A conversational agent asks clarifying questions (for example, the exact address, the area, and the pincode), then confirms the submission. The citizen can track the status of past submissions.
 
-2. **Leader dashboard.** The leader sees complaints and suggestions as a filterable, sorted list. Each item shows the AI assigned category, urgency, a short summary, and how many people reported the same thing. The leader can change the status of an item and read an AI written briefing that summarizes the current situation.
+2. **Leader dashboard**, at `http://localhost:5173/dashboard`. The leader sees complaints and suggestions as a filterable, sorted list. Each item shows the AI assigned category, urgency, a short summary, and how many people reported the same thing. The leader can change the status of an item and read an AI written briefing that summarizes the current situation.
 
-3. **Evaluation console.** A hidden internal page (reachable only by typing its URL) that shows how accurately the AI pipeline is performing over time. It is meant for the engineer, not for citizens or leaders.
+3. **Evaluation console**, at `http://localhost:5173/internal-eval`. A hidden internal page (not linked from anywhere in the citizen or leader UI, reachable only by visiting this URL directly) that shows how accurately the AI pipeline is performing over time. It is meant for the engineer, not for citizens or leaders.
 
 ---
 
@@ -91,14 +91,13 @@ A full visual map of this flow is available in the `diagrams/` folder (`0_full_s
 
 Before you start, install the following on your machine:
 
-1. **Python 3.11 or newer.** Check with `python --version`.
+1. **Python 3.11 or newer.**
+   - Windows: check with `python --version`.
+   - macOS/Linux: check with `python3 --version`. (macOS and most Linux distributions only ship `python3`, not a bare `python` command — use `python3` and `pip3` throughout this guide unless your system has `python` aliased to Python 3.)
 2. **Node.js 18 or newer, with npm.** Check with `node --version` and `npm --version`.
-3. **Ollama.** Download it from [ollama.com](https://ollama.com/) and install it. After installing, make sure the Ollama service is running (on Windows and macOS it usually starts automatically and stays in the background).
+3. **Ollama.** Download it from [ollama.com](https://ollama.com/) and install it. After installing, make sure the Ollama service is running (on Windows and macOS it usually starts automatically and stays in the background). You can confirm it's running by opening `http://localhost:11434` in a browser — it should show a short confirmation message.
 
 You do not need a GPU. Everything is configured to run on CPU.
-
----
-
 
 ---
 
@@ -108,14 +107,15 @@ The chat intake flow can translate Hindi and Marathi messages into English befor
 
 This step is entirely optional. Without it, the application still works from start to finish. Hindi and Marathi messages simply pass through untranslated instead of being converted, and the downstream prompts are already written to tolerate mixed language input. If you only need an English demo, you can skip this section.
 
-To enable real translation:
+To enable real translation (do this any time after completing [Setup, step by step](#setup-step-by-step), since it edits the `backend/.env` file created in Step 5):
 
 1. Create a free account at [huggingface.co](https://huggingface.co) if you do not already have one.
 2. Visit the [model page](https://huggingface.co/ai4bharat/indictrans2-indic-en-dist-200M) and click **Agree and access repository**. Approval is instant and automatic.
 3. Create an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
 4. Provide the token to the app in either of these two ways:
    - Run `huggingface-cli login` from this machine and paste the token when prompted, or
-   - Put the token into `backend/.env` as `HF_TOKEN=your_token_here`.
+   - Open `backend/.env` in a text editor and add the line `HF_TOKEN=your_token_here`.
+5. Restart the backend (Terminal 1) if it was already running, so it picks up the new setting.
 
 The first Hindi or Marathi message in any run will then download the model (roughly 200 MB) automatically. Later runs reuse the cached copy, so the download happens only once.
 
@@ -125,24 +125,24 @@ The first Hindi or Marathi message in any run will then download the model (roug
 
 By default all reasoning runs locally through Ollama, which needs no API key and no internet. If you want faster responses and are willing to use a cloud service, you can route the reasoning calls (gatekeeper, classify, urgency, extract, dialogue manager, and reply composer) to Groq instead.
 
-To switch:
+To switch (do this any time after completing [Setup, step by step](#setup-step-by-step), since it edits the `backend/.env` file created in Step 5):
 
 1. Get an API key from [groq.com](https://groq.com/).
-2. Open `backend/.env` and set `GROQ_API_KEY` to your key.
-3. Restart the backend.
+2. Open `backend/.env` in a text editor and set `GROQ_API_KEY` to your key.
+3. Restart the backend (Terminal 1).
 
 When `GROQ_API_KEY` is set, Groq handles the reasoning using `GROQ_MODEL`, and Ollama is used only for embeddings (Groq does not provide an embeddings endpoint). To go back to fully local operation, clear the `GROQ_API_KEY` value and restart. Nothing else needs to change, because both model names stay in the file at the same time and only the presence of the key decides which backend is used.
 
----
 
+---
 
 ## Setup, step by step
 
-The commands below assume you start from the project root directory (the folder that contains `backend/`, `frontend/`, and this README). Windows PowerShell commands are shown first, with the macOS and Linux equivalent noted where it differs.
+The commands below assume you start from the project root directory (the folder that contains `backend/`, `frontend/`, and this README). Windows PowerShell commands are shown first, with the macOS and Linux equivalent noted where it differs. Steps with a single code block (pulling models, installing PyTorch, installing Python dependencies, installing frontend dependencies) use the exact same command on all three platforms.
 
 ### Step 1: Pull the local models (once)
 
-Ollama needs to download the two models the app uses. This is a one time step.
+Ollama needs to download the two models the app uses. This is a one time step, and requires the Ollama service to already be running (see [Prerequisites](#prerequisites)).
 
 ```bash
 ollama pull qwen2.5:1.5b
@@ -155,26 +155,31 @@ You can confirm they are installed with `ollama list`.
 
 A virtual environment keeps this project's Python packages separate from the rest of your system.
 
+Windows (PowerShell):
+
 ```powershell
 python -m venv venv
 venv\Scripts\activate
 ```
 
-On macOS or Linux, activate it with:
+macOS/Linux:
 
 ```bash
+python3 -m venv venv
 source venv/bin/activate
 ```
 
-Once active, your shell prompt will show `(venv)` at the start of the line.
+Once active, your shell prompt will show `(venv)` at the start of the line. Every command below that starts with `pip` or `python` must be run with this virtual environment active.
 
 ### Step 3: Install PyTorch (CPU build) first
 
-Install PyTorch from its CPU only package index. Doing this before the main install avoids accidentally downloading a large multi gigabyte GPU build.
+Install PyTorch from its CPU only package index. Doing this before the main install avoids accidentally downloading a large multi gigabyte GPU build. Same command on Windows, macOS, and Linux:
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
+
+(macOS/Linux: use `pip3` instead of `pip` if `pip` is not recognized inside the activated virtual environment — this is uncommon, since activating `venv` normally puts the right `pip` on your `PATH`.)
 
 ### Step 4: Install the remaining Python dependencies
 
@@ -186,11 +191,13 @@ pip install -r requirements.txt
 
 The backend reads its settings from `backend/.env`. Copy the provided example to create your own copy.
 
+Windows (PowerShell):
+
 ```powershell
 copy backend\.env.example backend\.env
 ```
 
-On macOS or Linux:
+macOS/Linux:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -199,6 +206,8 @@ cp backend/.env.example backend/.env
 The default values in this file are already set up for a fully local run, so you do not need to edit anything to get started. See the [Configuration reference](#configuration-reference) for what each setting does.
 
 ### Step 6: Install the frontend dependencies
+
+Same command on Windows, macOS, and Linux:
 
 ```bash
 cd frontend
@@ -214,45 +223,51 @@ At this point the setup is complete.
 
 ## Running the application
 
-The application has two parts that run at the same time: the backend API and the frontend dev server. Open two terminals.
+The application has two parts that run at the same time: the backend API and the frontend dev server. Open two terminals, both from the project root directory.
 
 ### Terminal 1: start the backend
 
-Make sure your virtual environment is active (`venv\Scripts\activate` on Windows, or `source venv/bin/activate` on macOS and Linux), then run:
+Make sure your virtual environment is active first (`venv\Scripts\activate` on Windows, or `source venv/bin/activate` on macOS/Linux — see [Step 2](#setup-step-by-step) if you skipped setup).
+
+Windows (PowerShell):
 
 ```powershell
 $env:PYTHONPATH="backend"
 uvicorn app.main:app --reload --port 8000 --app-dir backend
 ```
 
-On macOS or Linux, set the path variable like this instead:
+macOS/Linux:
 
 ```bash
 export PYTHONPATH=backend
 uvicorn app.main:app --reload --port 8000 --app-dir backend
 ```
 
-The backend is now running at `http://localhost:8000`. You can verify it by opening `http://localhost:8000/health` in a browser, which should return `{"status": "ok"}`. The interactive API documentation is available at `http://localhost:8000/docs`.
+Leave this terminal running. The backend is now available at `http://localhost:8000`. Verify it by opening `http://localhost:8000/health` in a browser — it should return `{"status": "ok"}`. The interactive API documentation is available at `http://localhost:8000/docs`.
 
-The database file (`civic.db`) is created automatically on the first start.
+The database file (`backend/civic.db`) is created automatically on the first start — no manual database setup is needed.
 
 ### Terminal 2: start the frontend
+
+Same command on Windows, macOS, and Linux:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-The terminal will print two links:
+Leave this terminal running too. It will print a local URL (usually `http://localhost:5173/`); the three application surfaces are all served from that same origin, at these exact paths:
 
-```
-   Citizen Voice Form:   http://localhost:5173/
-   Leader Dashboard:     http://localhost:5173/dashboard
-```
+| Surface | URL |
+| --- | --- |
+| Citizen portal | `http://localhost:5173/` |
+| Leader dashboard | `http://localhost:5173/dashboard` |
+| Evaluation console | `http://localhost:5173/internal-eval` |
 
-Open each link in its own browser tab. The citizen portal is the first link, and the leader dashboard is the second.
+Open each link in its own browser tab. With both terminals running (backend on port 8000, frontend on port 5173), the application is fully usable end to end.
 
-That is everything needed to use the application.
+---
+
 
 ---
 
@@ -264,6 +279,8 @@ To populate the dashboard with example complaints and suggestions so you can see
 python backend/app/db/seed.py
 ```
 
+(macOS/Linux: use `python3` if `python` is not recognized.)
+
 This is optional but recommended for a first run, so the leader dashboard is not empty.
 
 ---
@@ -274,12 +291,19 @@ The evaluation harness measures how accurately the AI pipeline performs (gatekee
 
 Make sure Ollama is running and the virtual environment is active, then run:
 
+Windows (PowerShell):
+
 ```powershell
 $env:PYTHONPATH="backend"
 python backend/eval/run_eval.py
 ```
 
-On macOS or Linux, use `export PYTHONPATH=backend` instead of the PowerShell line.
+macOS/Linux:
+
+```bash
+export PYTHONPATH=backend
+python3 backend/eval/run_eval.py
+```
 
 Results are written to `backend/eval/reports/eval_<timestamp>.json`. Because this runs many local model calls, a full run can take a while on CPU.
 
@@ -287,12 +311,19 @@ Results are written to `backend/eval/reports/eval_<timestamp>.json`. Because thi
 
 ## Running the test suite
 
+Windows (PowerShell):
+
 ```powershell
 $env:PYTHONPATH="backend"
 python -m pytest backend/tests/ -v
 ```
 
-On macOS or Linux, use `export PYTHONPATH=backend` instead of the PowerShell line.
+macOS/Linux:
+
+```bash
+export PYTHONPATH=backend
+python3 -m pytest backend/tests/ -v
+```
 
 ---
 
@@ -349,12 +380,16 @@ Civic-voice-agent/
 
 **The backend cannot reach Ollama.** Make sure the Ollama service is running. You can test it by opening `http://localhost:11434` in a browser, which should show a short confirmation that Ollama is running. If you changed the port, update `OLLAMA_HOST` in `backend/.env`.
 
-**A model is not found.** Confirm the two models were pulled with `ollama list`. If they are missing, run the `ollama pull` commands from Step 1 again.
+**A model is not found.** Confirm the two models were pulled with `ollama list`. If they are missing, run the `ollama pull` commands from [Step 1](#setup-step-by-step) again.
 
 **`ModuleNotFoundError: No module named 'app'` when starting the backend.** This means `PYTHONPATH` is not set. Set it to `backend` as shown in the run commands, and make sure you are running from the project root.
 
-**The frontend loads but shows no data.** Confirm the backend is running on port 8000, and consider running the seed script so there is demo data to display.
+**The frontend loads but shows no data.** Confirm the backend is running on port 8000, and consider running the [seed script](#seeding-demo-data) so there is demo data to display.
 
 **Hindi or Marathi messages are not being translated.** This is expected until you complete the optional Hugging Face setup. The app keeps working and passes the original text through. Follow the [translation setup](#optional-hindi-and-marathi-translation) to enable it.
 
 **Responses feel slow.** Local models on CPU are slower than cloud APIs. You can raise `OLLAMA_NUM_THREAD` in `backend/.env` to match your CPU core count, or switch to the optional Groq backend for faster reasoning.
+
+**`python: command not found` on macOS/Linux.** Use `python3` and `pip3` instead of `python` and `pip` throughout this guide — most macOS and Linux installs don't alias `python` to Python 3 by default.
+
+**Port 8000 or 5173 is already in use.** Stop whatever else is using that port, or start the backend on a different port with `--port <number>` (and adjust anywhere `localhost:8000` is referenced accordingly), or start the frontend on a different port with `npm run dev -- --port <number>`.
