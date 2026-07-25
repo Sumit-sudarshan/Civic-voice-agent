@@ -217,8 +217,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-
+MVP_roadmap.md
+MVP_Design.md
 Roadmap.md
 *.db
 node_modules
 backend/eval/reports
+
+# Deploy SSH keypair (private key must never be committed — lives only in
+# the GitHub Actions repo secret and the VM's authorized_keys).
+deploy/keys/

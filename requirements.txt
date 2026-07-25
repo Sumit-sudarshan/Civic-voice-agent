@@ -5,6 +5,10 @@ pydantic-settings
 ollama
 groq
 numpy
+# Postgres driver, used everywhere (Supabase in dev and prod alike).
+psycopg2-binary
+# SQLAlchemy Vector type + adapter for pgvector columns.
+pgvector
 pytest
 pytest-asyncio
 httpx

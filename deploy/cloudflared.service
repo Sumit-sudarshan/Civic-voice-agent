@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Quick Tunnel for Civic Voice Agent
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:80 --no-autoupdate
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

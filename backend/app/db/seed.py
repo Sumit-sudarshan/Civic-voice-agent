@@ -5,7 +5,29 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from sqlmodel import Session, select
 from app.db.session import engine, create_db_and_tables
-from app.models.db_models import Complaint, SubmissionType, Category, UrgencyLevel, Status
+from app.models.db_models import Complaint, SubmissionType, Category, UrgencyLevel, Status, Leader
+
+# FR8 dummy jurisdiction set: ~5 leaders, one city each, free-text pincode.
+# Keyed by pincode prefix so seeded complaints below can be linked to the
+# leader whose jurisdiction they fall under (FR9 city/pincode routing).
+LEADERS = [
+    dict(name="Anita Deshmukh", phone="9820000001", email="anita.deshmukh@example.com", city="Mumbai", pincode="400021", prefix="400"),
+    dict(name="Ravi Kulkarni", phone="9820000002", email="ravi.kulkarni@example.com", city="Pune", pincode="411001", prefix="411"),
+    dict(name="Suman Reddy", phone="9820000003", email="suman.reddy@example.com", city="Bangalore", pincode="560034", prefix="560"),
+    dict(name="Vikas Chandra", phone="9820000004", email="vikas.chandra@example.com", city="Delhi", pincode="110017", prefix="110"),
+    dict(name="Meena Iyer", phone="9820000005", email="meena.iyer@example.com", city="Chennai", pincode="600001", prefix="600"),
+]
+
+def _seed_leaders(session: Session) -> dict:
+    """Returns {pincode_prefix: leader_id} for linking seeded complaints below."""
+    prefix_to_id = {}
+    for entry in LEADERS:
+        leader = Leader(name=entry["name"], phone=entry["phone"], email=entry["email"],
+                         city=entry["city"], pincode=entry["pincode"])
+        session.add(leader)
+        session.flush()  # assigns leader.id without committing yet
+        prefix_to_id[entry["prefix"]] = leader.id
+    return prefix_to_id
 
 def seed_db():
     create_db_and_tables()
@@ -15,7 +37,14 @@ def seed_db():
             print("Database already seeded.")
             return
 
-        print("Seeding database with 15 demo records...")
+        print("Seeding database: 5 dummy leaders + 15 demo complaints...")
+        leader_by_prefix = _seed_leaders(session)
+
+        def leader_for(pincode: str | None):
+            if not pincode:
+                return None
+            return leader_by_prefix.get(pincode[:3])
+
         complaints = [
             # --- COMPLAINTS ---
             Complaint(
@@ -224,9 +253,12 @@ def seed_db():
             ),
         ]
 
+        for c in complaints:
+            c.concerned_leader_id = leader_for(c.location_pincode)
+
         session.add_all(complaints)
         session.commit()
-        print(f"Seeded {len(complaints)} records successfully!")
+        print(f"Seeded {len(LEADERS)} leaders and {len(complaints)} complaints successfully!")
 
 if __name__ == "__main__":
     seed_db()

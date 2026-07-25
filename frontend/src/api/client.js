@@ -1,4 +1,9 @@
-const API_BASE = 'http://localhost:8000';
+// Set VITE_API_BASE_URL at build time. Empty string ("") means same-origin —
+// the production build's intent, since Nginx serves the frontend and proxies
+// the API from the same host. Unset (undefined) falls back to the local dev
+// backend. Must be `??`, not `||` — "" is a deliberate, valid value here and
+// `||` would incorrectly discard it in favor of the fallback.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export async function fetchCategories() {
   const res = await fetch(`${API_BASE}/settings/categories`);

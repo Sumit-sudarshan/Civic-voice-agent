@@ -4,7 +4,7 @@ Civic Voice Agent is an AI powered system that collects complaints and suggestio
 
 A citizen describes a problem in plain language (English, Hindi, or Marathi). The system asks a few follow up questions to pin down the location and the actual issue, then runs the submission through an AI pipeline that labels it, scores its urgency, extracts the key facts, and merges it with any existing report about the same problem. The leader sees a clean, deduplicated, prioritized list instead of a flood of raw messages.
 
-The whole system can run fully offline on a normal laptop using local models through Ollama. There is no mandatory cloud dependency.
+LLM reasoning can run fully local through Ollama, with Groq/OpenRouter as optional faster cloud backends. Storage is Supabase Postgres (with `pgvector`) in every environment — there is no local database option.
 
 ---
 
@@ -53,7 +53,7 @@ When a citizen sends a message, it flows through these stages:
    - **Extract** structured fields: location, issue summary, affected parties, and the specific ask.
    - **Embed** the text into a vector using a local embedding model.
    - **Deduplicate** against recent open complaints in the same category and area using cosine similarity. A close match increments a report counter instead of creating a duplicate row.
-6. **Storage.** Everything is written to a local SQLite database and shown on the dashboard.
+6. **Storage.** Everything is written to a Postgres database and shown on the dashboard.
 
 A full visual map of this flow is available in the `diagrams/` folder (`0_full_system_overview.svg` is the complete picture, and the numbered files cover each component individually).
 
@@ -65,7 +65,7 @@ A full visual map of this flow is available in the `diagrams/` folder (`0_full_s
 
 - Python 3.11
 - FastAPI for the web API, served by Uvicorn
-- SQLModel (built on SQLAlchemy) over SQLite for storage
+- SQLModel (built on SQLAlchemy) over Postgres for storage
 - Ollama for local LLM inference and text embeddings
 - Groq as an optional cloud backend for the reasoning calls
 - langdetect for language identification
@@ -95,7 +95,8 @@ Before you start, install the following on your machine:
    - Windows: check with `python --version`.
    - macOS/Linux: check with `python3 --version`. (macOS and most Linux distributions only ship `python3`, not a bare `python` command — use `python3` and `pip3` throughout this guide unless your system has `python` aliased to Python 3.)
 2. **Node.js 18 or newer, with npm.** Check with `node --version` and `npm --version`.
-3. **Ollama.** Download it from [ollama.com](https://ollama.com/) and install it. After installing, make sure the Ollama service is running (on Windows and macOS it usually starts automatically and stays in the background). You can confirm it's running by opening `http://localhost:11434` in a browser — it should show a short confirmation message.
+3. **A Supabase project** (free tier) with the `vector` extension enabled, and its Supavisor pooler connection string. There is no local database in this design — dev and prod both point at Supabase (see `.env.example`).
+4. **Ollama**, always required — embeddings run locally regardless of which reasoning backend (Ollama/Groq/OpenRouter) is active, since dedup vectors are derived from PII-bearing complaint text. Download it from [ollama.com](https://ollama.com/) and install it. After installing, make sure the Ollama service is running (on Windows and macOS it usually starts automatically and stays in the background). You can confirm it's running by opening `http://localhost:11434` in a browser — it should show a short confirmation message.
 
 You do not need a GPU. Everything is configured to run on CPU.
 
@@ -245,7 +246,7 @@ uvicorn app.main:app --reload --port 8000 --app-dir backend
 
 Leave this terminal running. The backend is now available at `http://localhost:8000`. Verify it by opening `http://localhost:8000/health` in a browser — it should return `{"status": "ok"}`. The interactive API documentation is available at `http://localhost:8000/docs`.
 
-The database file (`backend/civic.db`) is created automatically on the first start — no manual database setup is needed.
+Requires `DATABASE_URL` in `backend/.env` pointing at your Supabase project's pooler connection string. Tables are created automatically on first start.
 
 ### Terminal 2: start the frontend
 
@@ -333,12 +334,15 @@ All backend settings live in `backend/.env`. The defaults are tuned for a fully 
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `GROQ_API_KEY` | empty | If set, Groq handles reasoning calls. If empty, everything runs locally on Ollama. |
+| `GROQ_API_KEY` | empty | If set, Groq handles reasoning calls (highest priority). |
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | The Groq model used for reasoning, when Groq is active. |
-| `OLLAMA_LLM_MODEL` | `qwen2.5:1.5b` | The local Ollama model used for reasoning, when Groq is not active. |
-| `EMBEDDING_MODEL` | `nomic-embed-text` | The Ollama model used to generate embeddings for duplicate detection. Always local. |
+| `OPENROUTER_API_KEY` | empty | If set (and Groq isn't), OpenRouter handles reasoning. |
+| `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | The OpenRouter model used for reasoning, when active. |
+| `OLLAMA_LLM_MODEL` | `qwen2.5:1.5b` | The local Ollama model used for reasoning, when neither Groq nor OpenRouter is active. |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | The Ollama model used for embeddings — always local regardless of reasoning backend (dedup vectors are derived from PII-bearing text). |
 | `HF_TOKEN` | empty | Hugging Face access token for the Hindi and Marathi translation model. Optional. |
-| `DB_PATH` | `civic.db` | Path to the SQLite database file. Created automatically. |
+| `PUBLISHABLE_KEY` / `SECRET_KEY` | empty | Supabase's anon-key / service-role-key equivalents. Wired up in Phase 3 (auth); `SECRET_KEY` must never reach the frontend. |
+| `DATABASE_URL` | none — required | Supabase Supavisor pooler connection string (port 6543, transaction mode). Tables are created automatically on first start. See `.env.example`. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Where the Ollama service is listening. |
 | `OLLAMA_NUM_THREAD` | `4` | Number of CPU threads Ollama should use. Set this to your CPU core count for best speed. |
 

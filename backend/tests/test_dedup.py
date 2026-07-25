@@ -1,16 +1,37 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
-from app.models.db_models import Complaint, SubmissionType, Category, Status
+from sqlmodel import Session, select
+from app.db.session import engine, create_db_and_tables
+from app.models.db_models import Complaint, ComplaintReport, SubmissionType, Category, Status, EMBEDDING_DIM
 from app.pipeline.dedup import cosine_similarity, get_candidates, find_duplicate, find_reopened, merge_complaint
+
+
+def _vec(*head: float) -> list[float]:
+    """768-dim vector (pgvector enforces exact dimension) — see test_db.py."""
+    return list(head) + [0.0] * (EMBEDDING_DIM - len(head))
+
 
 @pytest.fixture(name="session")
 def session_fixture():
-    engine = create_engine("sqlite:///:memory:")
-    SQLModel.metadata.create_all(engine)
+    """Real Supabase Postgres — find_duplicate() now runs a pgvector cosine-
+    distance query that SQLite can't execute. Cleans up test-created rows."""
+    create_db_and_tables()
     with Session(engine) as session:
+        before_ids = set(session.exec(select(Complaint.id)).all())
         yield session
+        session.rollback()
+        # Two passes: no relationship() is defined between Complaint and
+        # ComplaintReport, so the ORM won't auto-order the deletes — flush
+        # child-row deletes before deleting the parent to satisfy the FK.
+        new_complaints = [c for c in session.exec(select(Complaint)).all() if c.id not in before_ids]
+        for c in new_complaints:
+            for r in session.exec(select(ComplaintReport).where(ComplaintReport.complaint_id == c.id)).all():
+                session.delete(r)
+        session.flush()
+        for c in new_complaints:
+            session.delete(c)
+        session.commit()
 
 def test_cosine_similarity():
     vec_a = [1.0, 0.0, 0.0]
@@ -30,12 +51,12 @@ def test_dedup_merge_logic(session: Session):
         category=Category.roads,
         is_valid_submission=True,
     )
-    c1.embedding = [0.9, 0.1, 0.0]
+    c1.embedding = _vec(0.9, 0.1)
     session.add(c1)
     session.commit()
 
     # Test find duplicate
-    new_embedding = [0.85, 0.15, 0.0]
+    new_embedding = _vec(0.85, 0.15)
     dup = find_duplicate(session, Category.roads, None, new_embedding, threshold=0.8)
 
     assert dup is not None
@@ -48,8 +69,6 @@ def test_dedup_merge_logic(session: Session):
     # Check report was created
     session.refresh(merged)
     # The complaint report should be in DB, we can query it
-    from app.models.db_models import ComplaintReport
-    from sqlmodel import select
     reports = session.exec(select(ComplaintReport).where(ComplaintReport.complaint_id == c1.id)).all()
     assert len(reports) == 1
     assert reports[0].citizen_name == "Bob"
@@ -73,7 +92,7 @@ def test_get_candidates_excludes_resolved(session: Session):
     candidates = get_candidates(session, Category.roads, None, location_address="Shriram Nagar")
     assert resolved not in candidates
 
-    dup = find_duplicate(session, Category.roads, None, [0.9, 0.1, 0.0], location_address="Shriram Nagar")
+    dup = find_duplicate(session, Category.roads, None, _vec(0.9, 0.1), location_address="Shriram Nagar")
     assert dup is None  # no embedding on any open candidate (there are none) -> no match
 
 

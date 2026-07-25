@@ -1,9 +1,12 @@
 import uuid
-import json
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Column
+from pgvector.sqlalchemy import Vector
 from enum import Enum
+
+# nomic-embed-text produces 768-dimensional embeddings.
+EMBEDDING_DIM = 768
 
 class SubmissionType(str, Enum):
     complaint = "complaint"
@@ -35,6 +38,23 @@ class PipelineStatus(str, Enum):
     processing = "processing"
     done = "done"
     failed = "failed"
+
+class Leader(SQLModel, table=True):
+    """
+    Corporator-level leader record (FR8). Jurisdiction is city + free-text
+    pincode, set at signup — no manual approval gate, no MLA/MP hierarchy.
+    Real leader/jurisdiction data lands later; MVP ships against a small
+    dummy set (~5 leaders x 5 cities, see db/seed.py). auth_user_id links to
+    Supabase Auth once Phase 3 wires up leader login; nullable until then.
+    """
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    auth_user_id: Optional[uuid.UUID] = Field(default=None, index=True)
+    name: str
+    phone: str
+    email: str
+    city: str
+    pincode: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Complaint(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -81,24 +101,19 @@ class Complaint(SQLModel, table=True):
     # stays visible.
     reopened_from: Optional[uuid.UUID] = Field(default=None, foreign_key="complaint.id")
 
-    # SQLite doesn't natively support vectors/arrays. We store embeddings as JSON strings.
-    embedding_json: Optional[str] = None
+    # Real pgvector column (nomic-embed-text = 768 dims). No ANN index at
+    # this scale — plain vector column, exact cosine search via `<=>`. See
+    # MVP_Design.md §3.1 / MVP_roadmap.md Phase 1.
+    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(EMBEDDING_DIM)))
+
+    # Leader (FR9) this complaint is routed to, chosen by the citizen from
+    # the city/pincode-filtered dropdown. Owner is the submitting citizen's
+    # Supabase auth.uid(). Both nullable until Phase 3 wires up auth/FR9.
+    concerned_leader_id: Optional[uuid.UUID] = Field(default=None, foreign_key="leader.id")
+    owner_user_id: Optional[uuid.UUID] = Field(default=None, index=True)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @property
-    def embedding(self) -> Optional[List[float]]:
-        if self.embedding_json:
-            return json.loads(self.embedding_json)
-        return None
-
-    @embedding.setter
-    def embedding(self, value: Optional[List[float]]):
-        if value is not None:
-            self.embedding_json = json.dumps(value)
-        else:
-            self.embedding_json = None
 
 class ComplaintReport(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)

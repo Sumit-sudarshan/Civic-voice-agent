@@ -2,22 +2,44 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # --- LLM backend selection ---
-    # If GROQ_API_KEY is set, Groq handles all reasoning calls (gatekeeper,
-    # classify, urgency, extract, dialogue manager) using GROQ_MODEL, and
-    # Ollama is used ONLY for embeddings (EMBEDDING_MODEL) — Groq has no
-    # embeddings endpoint. Leave GROQ_API_KEY empty/commented to fall back to
-    # Ollama for everything instead (reasoning via OLLAMA_LLM_MODEL,
-    # embeddings via EMBEDDING_MODEL). Both model names live in .env at once,
-    # so switching backends is just toggling GROQ_API_KEY — nothing else to edit.
+    # Reasoning only (gatekeeper, classify, urgency, extract, dialogue manager):
+    #   GROQ_API_KEY set             -> Groq (GROQ_MODEL)
+    #   else OPENROUTER_API_KEY set  -> OpenRouter (OPENROUTER_MODEL)   <- MVP default
+    #   else                         -> Ollama (OLLAMA_LLM_MODEL)
+    # Embeddings are ALWAYS local Ollama (EMBEDDING_MODEL). By design the dedup
+    # vectors are derived from PII-bearing complaint text, so that text never
+    # leaves the VM — it is not routed through any hosted API regardless of the
+    # reasoning backend. See MVP_Design.md §3.1.
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.1-8b-instant"
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
     OLLAMA_LLM_MODEL: str = "qwen2.5:1.5b"
     EMBEDDING_MODEL: str = "nomic-embed-text"
 
-    # Resolved at startup from the two model settings above — don't set this
-    # directly in .env. Kept as a real mutable field (not a computed
-    # property) so eval scripts' `--model` override (`settings.LLM_MODEL =
-    # ...`) keeps working exactly as before.
+    # --- Database ---
+    # Supabase-managed Postgres in every environment (no separate local DB).
+    # Must be the Supavisor transaction-mode pooler URL (port 6543):
+    #   postgresql+psycopg2://postgres.<ref>:<pw>@<host>.pooler.supabase.com:6543/postgres
+    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
+
+    # --- Supabase Auth (wired up in Phase 3; read at startup from now on so
+    # config validation doesn't break when these are already in .env) ---
+    # PUBLISHABLE_KEY: safe for client use (anon-key equivalent).
+    # SECRET_KEY: service-role equivalent — bypasses RLS, server-side only,
+    # never sent to the frontend. Both come from Secret Manager in prod.
+    PUBLISHABLE_KEY: str = ""
+    SECRET_KEY: str = ""
+
+    # --- CORS ---
+    # Comma-separated list of allowed origins. "*" (dev default) allows any
+    # origin; set to the deployed frontend's exact origin(s) in production.
+    ALLOWED_ORIGINS: str = "*"
+
+    # Resolved at startup from the settings above — don't set this directly
+    # in .env. Kept as a real mutable field (not a computed property) so eval
+    # scripts' `--model` override (`settings.LLM_MODEL = ...`) keeps working
+    # exactly as before.
     LLM_MODEL: str = ""
 
     # Access token for the gated IndicTrans2 model on Hugging Face (Hindi/
@@ -25,7 +47,6 @@ class Settings(BaseSettings):
     # passing Hindi/Marathi text through untranslated instead of crashing.
     HF_TOKEN: str = ""
 
-    DB_PATH: str = "civic.db"
     OLLAMA_HOST: str = "http://localhost:11434"
     # Ollama performance tuning
     OLLAMA_KEEP_ALIVE: str = "10m"   # Keep model loaded for 10 min across pipeline calls
@@ -38,7 +59,12 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Always recompute (not just "if empty") so a stray leftover
-        # LLM_MODEL= line in an old .env file can never shadow this.
-        self.LLM_MODEL = self.GROQ_MODEL if self.GROQ_API_KEY else self.OLLAMA_LLM_MODEL
+        # LLM_MODEL=/EMBED_MODEL= line in an old .env file can never shadow this.
+        if self.GROQ_API_KEY:
+            self.LLM_MODEL = self.GROQ_MODEL
+        elif self.OPENROUTER_API_KEY:
+            self.LLM_MODEL = self.OPENROUTER_MODEL
+        else:
+            self.LLM_MODEL = self.OLLAMA_LLM_MODEL
 
 settings = Settings()

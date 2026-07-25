@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import complaints, suggestions, stats, settings, eval as eval_api, intake
+from app.api import complaints, suggestions, stats, settings as settings_api, eval as eval_api, intake
+from app.config import settings
 from app.db.session import create_db_and_tables
 
 @asynccontextmanager
@@ -11,10 +12,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Civic Voice Agent", lifespan=lifespan)
 
-# Allow frontend to call the API
+# Allow frontend to call the API. ALLOWED_ORIGINS defaults to "*" for local
+# dev; set it to the deployed frontend's exact origin(s) in production.
+_origins = settings.ALLOWED_ORIGINS.split(",") if settings.ALLOWED_ORIGINS != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For dev
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,7 +26,7 @@ app.add_middleware(
 app.include_router(complaints.router)
 app.include_router(suggestions.router)
 app.include_router(stats.router)
-app.include_router(settings.router)
+app.include_router(settings_api.router)
 app.include_router(eval_api.router)
 app.include_router(intake.router)
 

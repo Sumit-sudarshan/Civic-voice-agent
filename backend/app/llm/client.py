@@ -1,4 +1,5 @@
 import ollama
+import httpx
 import logging
 from typing import Type, TypeVar, Optional
 from pydantic import BaseModel
@@ -7,6 +8,33 @@ from app.llm.parser import parse_with_retries
 
 T = TypeVar("T", bound=BaseModel)
 logger = logging.getLogger(__name__)
+
+
+class _OpenRouterChatClient:
+    """
+    Same .chat(...) shape as ollama.Client / _GroqChatClient — OpenRouter's
+    REST API is OpenAI-compatible, so this just speaks it directly over
+    httpx (already a dependency) instead of pulling in the openai SDK.
+    keep_alive and options.num_thread/num_ctx are Ollama-only and ignored.
+    """
+
+    def __init__(self, api_key: str):
+        self._http = httpx.Client(
+            base_url="https://openrouter.ai/api/v1",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=60.0,
+        )
+
+    def chat(self, model, messages, format=None, keep_alive=None, options=None):
+        payload = {"model": model, "messages": messages}
+        if format == "json":
+            payload["response_format"] = {"type": "json_object"}
+        if options and "temperature" in options:
+            payload["temperature"] = options["temperature"]
+        resp = self._http.post("/chat/completions", json=payload)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"] or ""
+        return {"message": {"content": content}}
 
 
 class _GroqChatClient:
@@ -35,6 +63,9 @@ def _build_llm_client():
     if settings.GROQ_API_KEY:
         logger.info(f"LLM backend: Groq (model={settings.LLM_MODEL})")
         return _GroqChatClient(api_key=settings.GROQ_API_KEY)
+    if settings.OPENROUTER_API_KEY:
+        logger.info(f"LLM backend: OpenRouter (model={settings.LLM_MODEL})")
+        return _OpenRouterChatClient(api_key=settings.OPENROUTER_API_KEY)
     logger.info(f"LLM backend: Ollama (model={settings.LLM_MODEL}, host={settings.OLLAMA_HOST})")
     return ollama.Client(host=settings.OLLAMA_HOST)
 

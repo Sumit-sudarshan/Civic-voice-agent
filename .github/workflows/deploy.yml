@@ -1,0 +1,42 @@
+name: Deploy to VM
+
+# Walking-skeleton deploy (MVP_roadmap.md Phase 2): on push to main, SSH into
+# the always-on GCE VM, pull latest, reinstall deps (idempotent/fast when
+# unchanged), rebuild the frontend, and restart the backend under systemd.
+# Secrets (OpenRouter key, DATABASE_URL, etc.) are never touched here — the
+# VM fetches those itself from Secret Manager via deploy/fetch_secrets.sh as
+# part of the systemd unit's ExecStartPre.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_VM_HOST }}
+          username: ${{ secrets.GCP_VM_USER }}
+          key: ${{ secrets.GCP_VM_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/civic-voice-agent
+            # Hard-sync to origin/main rather than `git pull` — the VM is a
+            # pure deploy target and should never carry independent local
+            # state (e.g. from an out-of-band sync) that could conflict.
+            git fetch origin main
+            git reset --hard origin/main
+
+            cd backend
+            source venv/bin/activate
+            pip install -q -r ../requirements.txt
+
+            cd ../frontend
+            npm install --silent
+            VITE_API_BASE_URL= npm run build
+
+            sudo systemctl restart civic-voice.service
+            sleep 3
+            curl -sf http://localhost/health
