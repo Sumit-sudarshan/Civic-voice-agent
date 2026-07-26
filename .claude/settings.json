@@ -7,7 +7,20 @@
       "Bash(gh workflow *)",
       "Bash(docker --version)",
       "Bash(pg_dump --version)",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(python -m pytest -v)",
+      "Bash(gcloud config *)",
+      "Bash(python -c ' *)",
+      "Bash(python eval/run_eval.py --suite demo --delay 1.0)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(kill 1494)",
+      "Bash(jobs -l)",
+      "Bash(python \"C:/Users/sumit/AppData/Local/Temp/claude/d--Sam-Python-Machine-learning-Civic-voice-agent/c9734883-cfd9-47e1-94c6-205700f4404b/scratchpad/phase8_e2e_smoke.py\")",
+      "Bash(python -m pytest tests/test_orchestrator.py tests/test_api.py tests/test_concurrency.py tests/test_gatekeeper.py -q)",
+      "Bash(python -m pytest tests/test_connection_pool.py -v)",
+      "Bash(gh run *)",
+      "Bash(gcloud billing *)",
+      "Bash(python -m pytest -q)"
     ]
   }
 }

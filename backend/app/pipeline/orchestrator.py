@@ -439,6 +439,19 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
             rate_limit_message=rate_limit_message,
         )
 
+    # Phase 9 load test finding: SQLAlchemy keeps a Session's connection
+    # checked out from the pool for the whole transaction it auto-began on
+    # check_rate_limit's SELECT above — including however long the LLM calls
+    # below block (gatekeeper, dialogue manager, up to ~13s each on retries).
+    # With pool_size=5/max_overflow=0, a burst of 20-50 concurrent citizens
+    # exhausted the pool in ~30s and every 6th+ concurrent turn failed with
+    # sqlalchemy.exc.TimeoutError (confirmed live against the deployed VM).
+    # There is no pending write yet, so rollback() is a free, side-effect-free
+    # way to release the connection back to the pool for the LLM-heavy
+    # remainder of this turn; `session` re-acquires one automatically the
+    # next time it's actually used (a rejection or the final stub insert).
+    session.rollback()
+
     is_turn_1 = len(payload.history) == 0
     vagueness_mode = payload.submission_type_hint is None and not is_turn_1
     submission_type: Optional[str] = payload.submission_type_hint

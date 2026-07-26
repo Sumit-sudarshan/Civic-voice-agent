@@ -9,6 +9,7 @@ name: Deploy to VM
 on:
   push:
     branches: [main]
+  workflow_dispatch: {} # manual re-deploy (e.g. after a secret rotation) without needing an empty commit
 
 jobs:
   deploy:
@@ -38,5 +39,22 @@ jobs:
             VITE_API_BASE_URL= npm run build
 
             sudo systemctl restart civic-voice.service
-            sleep 3
-            curl -sf http://localhost/health
+
+            # Poll instead of a fixed sleep: uvicorn's own startup (import of
+            # torch/ollama/google-cloud-logging + JWKS/DB init) measured at
+            # ~11s on this e2-micro even when everything is healthy — a fixed
+            # `sleep 3` was failing this smoke check on every single deploy
+            # (discovered in Phase 8), which is worse than no check at all
+            # since a real failure would look identical to "just needed more
+            # time." Poll for up to 45s; only a genuine non-2xx/timeout fails
+            # the job.
+            for i in $(seq 1 15); do
+              if curl -sf http://localhost/health; then
+                echo "Health check passed on attempt $i"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "Health check failed after 45s — service did not come up healthy"
+            sudo systemctl status civic-voice.service --no-pager -l
+            exit 1

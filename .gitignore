@@ -220,6 +220,7 @@ __marimo__/
 MVP_roadmap.md
 MVP_Design.md
 Roadmap.md
+RUNBOOK.md
 *.db
 node_modules
 backend/eval/reports
