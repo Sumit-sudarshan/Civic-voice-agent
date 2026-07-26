@@ -1,8 +1,10 @@
 import json
 import logging
+import time
 from typing import Type, TypeVar, Optional
 from pydantic import BaseModel, ValidationError
 from app.config import settings
+from app.llm.cost_logging import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +44,26 @@ def _build_simple_schema_hint(response_model: Type[T]) -> str:
 
 
 def parse_with_retries(
-    client, model: str, system_prompt: str, user_prompt: str, response_model: Type[T]
+    client, model: str, system_prompt: str, user_prompt: str, response_model: Type[T],
+    max_retries: int = 2, backoff_schedule: Optional[list] = None, stage: str = "unknown",
 ) -> Optional[T]:
     """
     Calls the LLM, attempts to parse as response_model.
-    On ValidationError, retries by appending the error to the prompt.
-    Max 2 retries (3 attempts total).
+    Two distinct failure modes, both retried up to `max_retries` times
+    (`max_retries + 1` attempts total), with a backoff sleep from
+    `backoff_schedule` between attempts (NFR7 — a failed call retries with
+    bounded attempts, never a silent drop):
+      - ValidationError (model returned malformed JSON): the error is
+        appended to the prompt so the retry can actually fix it.
+      - Any other exception (timeout, connection error, rate limit, etc.):
+        retried unchanged — these are transient, not a prompting problem.
+    Returns None if every attempt fails, so the caller can fall back
+    gracefully (a static template, needs_human_review, etc.) — this
+    function itself never raises.
     """
+    if backoff_schedule is None:
+        backoff_schedule = [1.0, 3.0]
+
     schema_hint = _build_simple_schema_hint(response_model)
     base_system_prompt = f"{system_prompt}\n\n{schema_hint}"
 
@@ -63,7 +78,9 @@ def parse_with_retries(
         "temperature": 0.1,
     }
 
-    for attempt in range(3):
+    total_attempts = max_retries + 1
+    for attempt in range(total_attempts):
+        is_last_attempt = attempt == total_attempts - 1
         try:
             response = client.chat(
                 model=model,
@@ -77,21 +94,29 @@ def parse_with_retries(
             )
 
             raw_output = response.get("message", {}).get("content", "")
+            # FR14 — log tokens/cost for every successful call, tagged by stage.
+            log_llm_call(stage, response.get("model", model), response.get("usage"), success=True)
             return response_model.model_validate_json(raw_output)
 
         except ValidationError as e:
-            logger.warning(f"LLM validation error on attempt {attempt + 1}: {e}")
-            if attempt < 2:
-                current_user_prompt = (
-                    f"{user_prompt}\n\n"
-                    f"Your last response was invalid. Error: {e}. "
-                    "Fix it and return only the JSON object."
-                )
-            else:
-                logger.error("Final LLM retry failed. Returning None.")
+            logger.warning(f"LLM validation error on attempt {attempt + 1}/{total_attempts}: {e}")
+            if is_last_attempt:
+                logger.error("Final LLM retry failed (validation). Returning None.")
+                log_llm_call(stage, model, None, success=False)
                 return None
+            current_user_prompt = (
+                f"{user_prompt}\n\n"
+                f"Your last response was invalid. Error: {e}. "
+                "Fix it and return only the JSON object."
+            )
         except Exception as e:
-            logger.error(f"Unexpected error calling LLM: {e}")
-            return None
+            logger.warning(f"LLM call error on attempt {attempt + 1}/{total_attempts}: {e}")
+            if is_last_attempt:
+                logger.error(f"Final LLM retry failed (call error): {e}. Returning None.")
+                log_llm_call(stage, model, None, success=False)
+                return None
+
+        if attempt < len(backoff_schedule):
+            time.sleep(backoff_schedule[attempt])
 
     return None

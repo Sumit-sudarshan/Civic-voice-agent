@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('lifecycle_config'\\) or d.get\\('lifecycle'\\), indent=2\\)\\)\")",
+      "Bash(gcloud iam *)",
+      "Bash(gh variable *)",
+      "Bash(gh workflow *)",
+      "Bash(docker --version)",
+      "Bash(pg_dump --version)",
+      "Bash(docker info *)"
+    ]
+  }
+}

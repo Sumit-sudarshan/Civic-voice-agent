@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Home, MessageSquareText } from 'lucide-react';
+import { Home, ShieldCheck } from 'lucide-react';
 import { login } from '../api/auth';
 
-export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToLeaderLogin }) {
+export default function LeaderLogin({ onLoginSuccess, onBack, onSignup, onGoToCitizenLogin }) {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
@@ -14,6 +14,10 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
     setSubmitting(true);
     try {
       const user = await login({ email, password });
+      if (user.role !== 'leader') {
+        setError('This account is not registered as a leader. Use the citizen login instead.');
+        return;
+      }
       onLoginSuccess(user);
     } catch (err) {
       setError(err.message || 'Login failed.');
@@ -23,39 +27,42 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
   };
 
   return (
-    <div className="min-h-full flex flex-col font-sans bg-[#ebf5fb]">
+    <div className="min-h-full flex flex-col font-sans bg-[#eef6ee]">
 
       {/* Logo header */}
       <div className="bg-white px-4 sm:px-8 py-2 flex justify-between items-center border-b border-gray-200 shadow-sm">
         <div className="flex items-center gap-4 cursor-pointer" onClick={onBack}>
-          <div className="h-9 w-9 rounded-lg bg-[#0e75c6] flex items-center justify-center shrink-0">
-            <MessageSquareText className="w-5 h-5 text-white" />
+          <div className="h-9 w-9 rounded-lg bg-[#1c7a3c] flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-lg sm:text-xl font-bold text-black">Citizen's Portal</span>
+            <span className="text-lg sm:text-xl font-bold text-black">Leader's Portal</span>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <div className="bg-[#0e75c6] text-white px-4 sm:px-8 flex items-center gap-6 text-sm font-semibold shadow-md">
-        <button onClick={onBack} className="py-3 px-2 hover:bg-[#1f93ff] transition-colors"><Home className="w-5 h-5"/></button>
-        <button className="py-3 px-2 hover:bg-[#1f93ff] transition-colors hidden sm:block text-white">Track your Complaint</button>
-        <button className="py-3 px-2 hover:bg-[#1f93ff] transition-colors hidden sm:block text-white">Contact Us</button>
+      <div className="bg-[#1c7a3c] text-white px-4 sm:px-8 flex items-center gap-6 text-sm font-semibold shadow-md">
+        <button onClick={onBack} className="py-3 px-2 hover:bg-[#25963f] transition-colors"><Home className="w-5 h-5"/></button>
+        <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Your Ward Dashboard</button>
+        <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Contact Support</button>
       </div>
 
       {/* Login card */}
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="bg-white rounded-xl shadow-md w-full max-w-lg px-10 py-8">
-          {/* Title */}
           <div className="flex items-center justify-center mb-5 gap-3">
-            <div className="flex-1 h-px bg-green-600" />
-            <h2 className="text-lg font-bold text-green-700 tracking-widest whitespace-nowrap">CITIZEN LOGIN</h2>
-            <div className="flex-1 h-px bg-green-600" />
+            <div className="flex-1 h-px bg-[#1c7a3c]" />
+            <h2 className="text-lg font-bold text-[#1c7a3c] tracking-widest whitespace-nowrap">LEADER LOGIN</h2>
+            <div className="flex-1 h-px bg-[#1c7a3c]" />
           </div>
 
+          <p className="text-xs text-gray-500 text-center mb-4">
+            For corporators and ward representatives to view and manage complaints in their jurisdiction.
+          </p>
+
           <div className="text-right mb-4">
-            <button type="button" onClick={onSignup} className="text-blue-600 text-sm hover:underline font-medium">Click Here for New User</button>
+            <button type="button" onClick={onSignup} className="text-blue-600 text-sm hover:underline font-medium">New Leader? Register Here</button>
           </div>
           <hr className="mb-5" />
 
@@ -66,7 +73,7 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
                 required type="email" value={email}
                 onChange={e => { setEmail(e.target.value); setError(''); }}
                 placeholder="you@example.com"
-                className="flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-green-400"
               />
             </div>
 
@@ -76,7 +83,7 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
                 required type="password" value={password}
                 onChange={e => { setPassword(e.target.value); setError(''); }}
                 placeholder="Your password"
-                className="flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-green-400"
               />
             </div>
 
@@ -84,7 +91,7 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
 
             <div className="flex items-center justify-center pt-2">
               <button type="submit" disabled={submitting}
-                className="bg-green-600 text-white px-8 py-2 rounded font-semibold hover:bg-green-700 transition-colors text-sm disabled:opacity-50">
+                className="bg-[#1c7a3c] text-white px-8 py-2 rounded font-semibold hover:bg-[#155c2d] transition-colors text-sm disabled:opacity-50">
                 {submitting ? 'Logging in…' : 'Login'}
               </button>
             </div>
@@ -92,9 +99,9 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
 
           <div className="mt-5 flex justify-between items-center">
             <button className="text-blue-600 text-sm font-bold hover:underline">Forgot Password</button>
-            {onGoToLeaderLogin && (
-              <button type="button" onClick={onGoToLeaderLogin} className="text-gray-500 text-xs hover:underline">
-                Are you a leader? Login here
+            {onGoToCitizenLogin && (
+              <button type="button" onClick={onGoToCitizenLogin} className="text-gray-500 text-xs hover:underline">
+                Citizen? Login here instead
               </button>
             )}
           </div>

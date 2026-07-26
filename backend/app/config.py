@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # never sent to the frontend. Both come from Secret Manager in prod.
     PUBLISHABLE_KEY: str = ""
     SECRET_KEY: str = ""
+    SUPABASE_URL: str = "https://lygnuqonfnedkrinlcqo.supabase.co"
 
     # --- CORS ---
     # Comma-separated list of allowed origins. "*" (dev default) allows any
@@ -52,6 +53,20 @@ class Settings(BaseSettings):
     OLLAMA_KEEP_ALIVE: str = "10m"   # Keep model loaded for 10 min across pipeline calls
     OLLAMA_NUM_THREAD: int = 4       # Set to your CPU core count (override via .env)
     OLLAMA_NUM_CTX: int = 2048       # Headroom for extraction's 5 few-shot examples + schema hint
+
+    # --- LLM call timeouts & retries (NFR7/NFR8) ---
+    # Sync loop = gatekeeper/dialogue-manager/reply-composer, run inline while
+    # the citizen is waiting on an HTTP response — a safety net, not a target
+    # (too low and the fallback path becomes the common path). Async loop =
+    # classify/urgency/extract/embed, run in the background finalize task
+    # where nobody's actively waiting, so it can afford to try harder before
+    # falling back to needs_human_review.
+    SYNC_LLM_TIMEOUT_S: float = 9.0
+    SYNC_LLM_RETRIES: int = 2                       # 3 attempts total
+    SYNC_LLM_BACKOFF_S: list[float] = [1.0, 3.0]
+    ASYNC_LLM_TIMEOUT_S: float = 20.0
+    ASYNC_LLM_RETRIES: int = 3                      # 4 attempts total
+    ASYNC_LLM_BACKOFF_S: list[float] = [2.0, 5.0, 10.0]
 
     class Config:
         env_file = ".env"

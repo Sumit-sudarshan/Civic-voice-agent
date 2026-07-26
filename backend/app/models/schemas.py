@@ -1,8 +1,9 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List, Literal
 import uuid
 from datetime import datetime
 from .db_models import SubmissionType, Category, UrgencyLevel, Status, PipelineStatus
+from app.utils.validators import validate_phone
 
 class ExtractionFeedbackIn(BaseModel):
     """Human 'did the agent get this right?' answer. Posted by the citizen after
@@ -82,6 +83,12 @@ class ChatMessageRequest(BaseModel):
     citizen_first_name: str
     citizen_last_name: Optional[str] = None
     citizen_phone: str
+    # FR9 — citizen-picked corporator from the city/pincode-filtered dropdown.
+    # Editable per conversation, so resent (possibly changed) every turn;
+    # whatever it is on the turn that actually creates the Complaint row wins.
+    concerned_leader_id: Optional[uuid.UUID] = None
+
+    _validate_phone = field_validator("citizen_phone")(validate_phone)
 
 class LocationSlotsOut(BaseModel):
     address: Optional[str] = None
@@ -89,7 +96,7 @@ class LocationSlotsOut(BaseModel):
     pincode: Optional[str] = None
 
 class ChatTurnResponse(BaseModel):
-    kind: Literal["rejected", "question", "submitted"]
+    kind: Literal["rejected", "question", "submitted", "rate_limited"]
     detected_language: str
     # English-normalized version of the citizen's just-submitted message —
     # the frontend stores THIS (not the original-language text) as this
@@ -100,6 +107,9 @@ class ChatTurnResponse(BaseModel):
 
     # kind == "rejected"
     rejection_reason: Optional[str] = None
+
+    # kind == "rate_limited"
+    rate_limit_message: Optional[str] = None
 
     # kind == "question"
     question_key: Optional[str] = None

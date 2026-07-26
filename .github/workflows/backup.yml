@@ -1,0 +1,73 @@
+name: Scheduled Supabase Backup
+
+# Phase 7 (NFR7): Supabase's free tier ships with no automatic backups, so
+# this dumps the full DB nightly to a private GCS bucket
+# (civic-voice-agent-backups — uniform access, public access prevention
+# enforced, 30-day auto-delete lifecycle rule). The writer service account
+# (civic-voice-backup@civic-voice-agent.iam.gserviceaccount.com) holds
+# roles/storage.objectCreator on that ONE bucket only — it cannot read,
+# list, or delete existing dumps, let alone touch anything else in the
+# project. The dump itself is a real PII surface (unmasked citizen phone
+# numbers) — see MVP_Design.md §5 — which is exactly why the bucket and the
+# writer's permissions are this tightly scoped.
+#
+# Uses the SESSION-mode Supavisor connection (port 5432), not the app's own
+# TRANSACTION-mode pooler (port 6543, DATABASE_URL in backend/.env) —
+# pg_dump needs session-level consistency that transaction pooling doesn't
+# guarantee. SUPABASE_BACKUP_DB_URL is the same pooler host as the app's
+# DATABASE_URL with the port swapped, stored as its own repo secret.
+#
+# --schema=public is load-bearing, not cosmetic: a real local test run of
+# this exact command against the live DB (no --schema filter) confirmed
+# that an unscoped pg_dump against Supabase's shared Postgres instance also
+# dumps Supabase's OWN internal schemas — auth.users, auth.sessions,
+# auth.refresh_tokens (live session tokens), vault.secrets, storage.*. That
+# is a far bigger PII/security exposure than the app's own tables alone.
+# public is the only schema this app owns (complaint, complaintreport,
+# extractionfeedback, leader — see backend/app/models/db_models.py).
+on:
+  schedule:
+    - cron: '17 3 * * *' # 03:17 UTC daily — arbitrary off-the-hour time, avoids the top-of-hour cron pile-up
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database (pg_dump via matching-version Postgres image)
+        run: |
+          set -euo pipefail
+          docker run --rm postgres:17 \
+            pg_dump "${SUPABASE_BACKUP_DB_URL}" --no-owner --no-privileges --schema=public -Fc \
+            > backup.dump
+          SIZE=$(stat -c%s backup.dump)
+          echo "Dump size: ${SIZE} bytes"
+          if [ "${SIZE}" -lt 1024 ]; then
+            echo "::error::Dump suspiciously small (<1KB) — refusing to upload a likely-broken backup"
+            exit 1
+          fi
+        env:
+          SUPABASE_BACKUP_DB_URL: ${{ secrets.SUPABASE_BACKUP_DB_URL }}
+
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_BACKUP_SA_KEY }}
+          token_format: access_token
+
+      - name: Upload to GCS
+        run: |
+          set -euo pipefail
+          # Direct REST API, not `gcloud storage cp` / `gsutil cp` — both
+          # were tested locally against the real bucket/SA and both fail
+          # against a pure objectCreator grant, because they also try to
+          # read the object back after upload (needs storage.objects.get,
+          # which objectCreator doesn't include). A raw create-only POST
+          # needs nothing beyond storage.objects.create.
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          curl -sf -X POST \
+            --data-binary @backup.dump \
+            -H "Authorization: Bearer ${{ steps.auth.outputs.access_token }}" \
+            -H "Content-Type: application/octet-stream" \
+            "https://storage.googleapis.com/upload/storage/v1/b/civic-voice-agent-backups/o?uploadType=media&name=civic-voice-${TIMESTAMP}.dump"

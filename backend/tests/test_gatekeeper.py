@@ -65,7 +65,7 @@ def session_fixture():
 
 def _turn(new_message: str) -> ChatMessageRequest:
     return ChatMessageRequest(
-        new_message=new_message, history=[], citizen_first_name="Test", citizen_phone="123",
+        new_message=new_message, history=[], citizen_first_name="Test", citizen_phone="9876543210",
     )
 
 

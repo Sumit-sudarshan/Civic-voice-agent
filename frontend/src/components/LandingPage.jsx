@@ -1,7 +1,7 @@
 import React from 'react';
 import { Home, Facebook, Twitter, Instagram, MessageSquareText } from 'lucide-react';
 
-export default function LandingPage({ onFileComplaint, onLogin, onSignup }) {
+export default function LandingPage({ onFileComplaint, onLogin, onSignup, onLeaderLogin }) {
   return (
     <div className="min-h-full font-sans flex flex-col bg-[#ebf5fb]">
 
@@ -87,6 +87,8 @@ export default function LandingPage({ onFileComplaint, onLogin, onSignup }) {
         <span className="cursor-pointer hover:underline">Privacy Policy</span>
         <span>|</span>
         <span className="cursor-pointer hover:underline">Disclaimer</span>
+        <span>|</span>
+        <span className="cursor-pointer hover:underline font-semibold text-[#0e75c6]" onClick={onLeaderLogin}>Leader Login</span>
       </div>
     </div>
   );

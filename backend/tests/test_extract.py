@@ -52,7 +52,7 @@ def test_finalize_submission_runs_extraction(monkeypatch):
         raw_text="Test complaint",
         submission_type=SubmissionType.complaint,
         citizen_name="Test",
-        citizen_phone="123",
+        citizen_phone="9876543210",
     )
 
     assert result.is_valid_submission is True

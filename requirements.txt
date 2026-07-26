@@ -9,11 +9,19 @@ numpy
 psycopg2-binary
 # SQLAlchemy Vector type + adapter for pgvector columns.
 pgvector
+# Verifies Supabase-issued JWTs locally against its JWKS (ES256) — no round
+# trip to Supabase per request. See app/auth/jwks.py.
+PyJWT[crypto]
+email-validator
 pytest
 pytest-asyncio
 httpx
 ruff
 langdetect
+# Ships structured app logs to Cloud Logging on the VM (Phase 6 / NFR6).
+# Uses ADC via the VM's attached service account — no-ops gracefully in
+# local dev/CI where no GCP credentials are present. See app/utils/logging.py.
+google-cloud-logging
 # Translation (Indic -> English only, see backend/app/pipeline/translation.py).
 # Install torch from the CPU-only wheel index to avoid pulling a multi-GB
 # CUDA build on a no-GPU machine:

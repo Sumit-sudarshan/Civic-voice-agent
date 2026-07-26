@@ -1,21 +1,23 @@
+import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass
-from typing import List, Literal, Optional
-from datetime import datetime, timezone
-from sqlmodel import Session
+from typing import Iterator, List, Literal, Optional
+from datetime import datetime, timezone, timedelta
+from sqlmodel import Session, select
 from app.models.schemas import ComplaintInternal, ChatMessageRequest, ChatTurnRecord, ChatTurnResponse, LocationSlotsOut
 from app.models.db_models import Complaint, Status, SubmissionType, PipelineStatus
 from app.pipeline.stages import (
     run_gatekeeper, run_classifier, run_urgency_scorer, run_extractor,
-    run_dialogue_manager, run_reply_composer,
+    run_dialogue_manager, run_reply_composer, stream_reply_composer,
 )
 from app.pipeline.dedup import embed, find_duplicate, find_reopened, merge_complaint
 from app.pipeline.language import detect_language
 from app.pipeline.translation import translate_to_english
 from app.pipeline.dialogue_templates import get_template
 from app.llm.prompts.dialogue import DialogueState
+from app.utils.logging import log_stage
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +73,14 @@ def finalize_submission(
         classify_result = None
 
     if not classify_result:
-        logger.warning(f"[{output.id}] Stage: Classify | Decision: needs_human_review | Reason: LLM failed at classification stage")
+        log_stage(logger, output.id, "classify", "needs_human_review",
+                  reason="LLM failed at classification stage", level="warning")
         output.needs_human_review = True
         output.review_reason = "LLM failed at classification stage"
         return output
 
     output.category = classify_result.category
-    logger.info(f"[{output.id}] Stage: Classify | Decision: proceed | Reason: category={classify_result.category}")
+    log_stage(logger, output.id, "classify", "proceed", reason=f"category={classify_result.category}")
 
     # 2. Urgency Scoring (complaints only)
     if submission_type == SubmissionType.complaint:
@@ -88,16 +91,19 @@ def finalize_submission(
             urgency_result = None
 
         if not urgency_result:
-            logger.warning(f"[{output.id}] Stage: Urgency | Decision: needs_human_review | Reason: LLM failed at urgency stage")
+            log_stage(logger, output.id, "urgency", "needs_human_review",
+                      reason="LLM failed at urgency stage", level="warning")
             output.needs_human_review = True
             output.review_reason = "LLM failed at urgency stage"
             return output
 
         output.urgency_level = urgency_result.urgency
         output.urgency_reasoning = urgency_result.reasoning
-        logger.info(f"[{output.id}] Stage: Urgency | Decision: proceed | Reason: scored as {urgency_result.urgency} | reasoning={urgency_result.reasoning!r}")
+        log_stage(logger, output.id, "urgency", "proceed",
+                  reason=f"scored as {urgency_result.urgency} | reasoning={urgency_result.reasoning!r}",
+                  urgency_level=str(urgency_result.urgency))
     else:
-        logger.info(f"[{output.id}] Stage: Urgency | Decision: skip | Reason: submission is a suggestion")
+        log_stage(logger, output.id, "urgency", "skip", reason="submission is a suggestion")
         output.urgency_level = None
         output.urgency_reasoning = None
 
@@ -118,12 +124,13 @@ def finalize_submission(
         extract_result = None
 
     if not extract_result:
-        logger.warning(f"[{output.id}] Stage: Extract | Decision: needs_human_review | Reason: LLM failed at extraction stage")
+        log_stage(logger, output.id, "extract", "needs_human_review",
+                  reason="LLM failed at extraction stage", level="warning")
         output.needs_human_review = True
         output.review_reason = "LLM failed at extraction stage"
         return output
 
-    logger.info(f"[{output.id}] Stage: Extract | Decision: proceed | Reason: extraction successful")
+    log_stage(logger, output.id, "extract", "proceed", reason="extraction successful")
     output.extracted_location = extract_result.location
     output.extracted_issue_summary = extract_result.issue_summary
     output.extracted_affected_parties = extract_result.affected_parties
@@ -132,7 +139,7 @@ def finalize_submission(
     # 4. Embedding & Deduplication
     try:
         output.embedding = embed(raw_text)
-        logger.info(f"[{output.id}] Stage: Embed | Decision: proceed | Reason: embedding generated successfully")
+        log_stage(logger, output.id, "embed", "proceed", reason="embedding generated successfully")
     except Exception as e:
         logger.error(f"[{output.id}] Embedding exception: {e}")
         output.embedding = None
@@ -143,7 +150,7 @@ def finalize_submission(
             output.embedding, location_address=location_address,
         )
         if dup:
-            logger.info(f"[{output.id}] Stage: Dedup | Decision: merge | Reason: found duplicate (id={dup.id})")
+            log_stage(logger, output.id, "dedup", "merge", reason=f"found duplicate (id={dup.id})")
             merge_complaint(
                 session=session,
                 existing_complaint=dup,
@@ -156,10 +163,11 @@ def finalize_submission(
         else:
             reopened = find_reopened(session, output.category, location_area, location_address)
             if reopened:
-                logger.info(f"[{output.id}] Stage: Dedup | Decision: insert_as_reopened | Reason: same spot resolved previously (id={reopened.id})")
+                log_stage(logger, output.id, "dedup", "insert_as_reopened",
+                          reason=f"same spot resolved previously (id={reopened.id})")
                 output.reopened_from = reopened.id
             else:
-                logger.info(f"[{output.id}] Stage: Dedup | Decision: insert | Reason: no duplicate found")
+                log_stage(logger, output.id, "dedup", "insert", reason="no duplicate found")
 
     logger.info(f"finalize_submission finished for id={output.id}")
     return output
@@ -323,7 +331,9 @@ _HARD_REJECT_LABELS = {"spam_or_gibberish", "off_topic", "abusive_or_harmful", "
 
 
 def _insert_rejected(raw_text: str, review_reason: str, citizen_name: str, citizen_phone: str,
-                      citizen_last_name: Optional[str], session: Session) -> uuid.UUID:
+                      citizen_last_name: Optional[str], session: Session,
+                      owner_user_id: Optional[uuid.UUID] = None,
+                      concerned_leader_id: Optional[uuid.UUID] = None) -> uuid.UUID:
     now = datetime.now(timezone.utc)
     row = Complaint(
         submission_type=SubmissionType.complaint,
@@ -336,6 +346,8 @@ def _insert_rejected(raw_text: str, review_reason: str, citizen_name: str, citiz
         is_valid_submission=False,
         review_reason=review_reason,
         report_count=1,
+        owner_user_id=owner_user_id,
+        concerned_leader_id=concerned_leader_id,
         created_at=now,
         updated_at=now,
     )
@@ -345,20 +357,87 @@ def _insert_rejected(raw_text: str, review_reason: str, citizen_name: str, citiz
     return row.id
 
 
-def process_turn(payload: ChatMessageRequest, session: Session, background_tasks=None) -> ChatTurnResponse:
+# FR7 — per-account submission rate limit. Counts every Complaint row this
+# account has created (including rejected ones), not just valid submissions:
+# a spam/gibberish stream that's rejected every time still costs a gatekeeper
+# call and a DB write, so it must count too, or the limit is trivially
+# bypassed by staying rejected. Checked once per turn, before any LLM call,
+# so a blocked account doesn't burn a gatekeeper call it's not going to get
+# credit for anyway.
+_HOURLY_LIMIT = 3
+_DAILY_LIMIT = 10
+
+
+def check_rate_limit(session: Session, owner_user_id: Optional[uuid.UUID]) -> Optional[str]:
+    """Returns a citizen-facing message if the account is rate-limited, else None."""
+    if owner_user_id is None:
+        return None  # no verified identity to rate-limit against (shouldn't happen — /intake requires auth)
+
+    now = datetime.now(timezone.utc)
+    hourly = session.exec(
+        select(Complaint.id).where(Complaint.owner_user_id == owner_user_id, Complaint.created_at >= now - timedelta(hours=1))
+    ).all()
+    if len(hourly) >= _HOURLY_LIMIT:
+        return f"You've reached the limit of {_HOURLY_LIMIT} submissions per hour. Please try again later."
+
+    daily = session.exec(
+        select(Complaint.id).where(Complaint.owner_user_id == owner_user_id, Complaint.created_at >= now - timedelta(days=1))
+    ).all()
+    if len(daily) >= _DAILY_LIMIT:
+        return f"You've reached the limit of {_DAILY_LIMIT} submissions per day. Please try again tomorrow."
+
+    return None
+
+
+@dataclass
+class PendingQuestion:
+    """
+    Returned by _prepare_turn when the turn resolves to "ask the citizen one
+    more thing" — everything needed to compose that reply, but not yet
+    composed. Exists so process_turn (non-streaming) and stream_turn_reply
+    (FR15, streaming) can share all the decision logic above this point and
+    only diverge on how the actual reply text gets generated and delivered.
+    """
+    question_key: str
+    need: str
+    language_name: str
+    detected_lang: str
+    new_message_english: str
+    transcript_blob: str
+    dialogue_state: DialogueState
+    submission_type: Optional[str]
+
+
+def _prepare_turn(payload: ChatMessageRequest, session: Session, background_tasks=None,
+                   owner_user_id: Optional[uuid.UUID] = None):
     """
     Handles exactly one citizen message. Stateless across HTTP calls — the
     frontend resends the full turn history each time (already
     English-normalized from prior responses), plus `submission_type_hint`
     (the one small piece of client-held state that lets the relatively
     expensive 7-way gatekeeper call run once per conversation, not every
-    turn).
+    turn). `owner_user_id` is the verified logged-in citizen's Supabase auth
+    id (set by the /intake route from the session cookie, never from the
+    request body) and is stamped onto every Complaint row this turn creates.
+
+    Returns either a final ChatTurnResponse (rate_limited/rejected/submitted
+    — nothing further to compose), or a PendingQuestion for the caller to
+    turn into a reply (see process_turn / stream_turn_reply below).
     """
     detected_lang = detect_language(payload.new_message)
     new_message_english = (
         translate_to_english(payload.new_message, detected_lang)
         if detected_lang in ("hi", "mr") else payload.new_message
     )
+
+    rate_limit_message = check_rate_limit(session, owner_user_id)
+    if rate_limit_message:
+        return ChatTurnResponse(
+            kind="rate_limited",
+            detected_language=detected_lang,
+            new_message_english=new_message_english,
+            rate_limit_message=rate_limit_message,
+        )
 
     is_turn_1 = len(payload.history) == 0
     vagueness_mode = payload.submission_type_hint is None and not is_turn_1
@@ -380,9 +459,9 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
             row_id = _insert_rejected(
                 new_message_english, gk.label,
                 f"{payload.citizen_first_name}", payload.citizen_phone,
-                payload.citizen_last_name, session,
+                payload.citizen_last_name, session, owner_user_id, payload.concerned_leader_id,
             )
-            logger.info(f"[{row_id}] Stage: Gatekeeper | Decision: rejected | Reason: {gk.label}")
+            log_stage(logger, row_id, "gatekeeper", "rejected", reason=gk.label)
             return ChatTurnResponse(
                 kind="rejected",
                 detected_language=detected_lang,
@@ -423,9 +502,9 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
             row_id = _insert_rejected(
                 transcript_blob, gk2.label,
                 payload.citizen_first_name, payload.citizen_phone,
-                payload.citizen_last_name, session,
+                payload.citizen_last_name, session, owner_user_id, payload.concerned_leader_id,
             )
-            logger.info(f"[{row_id}] Stage: Gatekeeper (recheck) | Decision: rejected | Reason: {gk2.label}")
+            log_stage(logger, row_id, "gatekeeper_recheck", "rejected", reason=gk2.label)
             return ChatTurnResponse(
                 kind="rejected", detected_language=detected_lang, new_message_english=new_message_english,
                 rejection_reason=gk2.label, complaint_id=row_id,
@@ -441,9 +520,9 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
         row_id = _insert_rejected(
             transcript_blob, next_action.giveup_reason,
             payload.citizen_first_name, payload.citizen_phone,
-            payload.citizen_last_name, session,
+            payload.citizen_last_name, session, owner_user_id, payload.concerned_leader_id,
         )
-        logger.info(f"[{row_id}] Stage: Dialogue | Decision: rejected | Reason: {next_action.giveup_reason}")
+        log_stage(logger, row_id, "dialogue", "rejected", reason=next_action.giveup_reason)
         return ChatTurnResponse(
             kind="rejected", detected_language=detected_lang, new_message_english=new_message_english,
             rejection_reason=next_action.giveup_reason, complaint_id=row_id,
@@ -451,37 +530,15 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
 
     if next_action.kind != "ready":
         question_key = next_action.kind
-        need = _NEED_BY_QUESTION_KEY.get(question_key, question_key)
-        language_name = _LANGUAGE_NAMES.get(detected_lang, "English")
-
-        try:
-            composed = run_reply_composer(transcript_blob, need, language_name)
-        except Exception as e:
-            logger.error(f"Reply composer exception: {e}")
-            composed = None
-
-        if composed:
-            question_en = composed.reply_english
-            question_localized = composed.reply_localized
-        else:
-            # Graceful fallback — static template, never crash the turn on a
-            # single bad LLM response.
-            question_en = get_template(question_key, "en")
-            question_localized = get_template(question_key, detected_lang)
-
-        return ChatTurnResponse(
-            kind="question",
-            detected_language=detected_lang,
-            new_message_english=new_message_english,
+        return PendingQuestion(
             question_key=question_key,
-            question_text=question_localized,
-            question_text_english=question_en,
-            slots_so_far=LocationSlotsOut(
-                address=dialogue_state.location_address,
-                area=dialogue_state.location_area,
-                pincode=dialogue_state.location_pincode,
-            ),
-            submission_type_hint=submission_type,
+            need=_NEED_BY_QUESTION_KEY.get(question_key, question_key),
+            language_name=_LANGUAGE_NAMES.get(detected_lang, "English"),
+            detected_lang=detected_lang,
+            new_message_english=new_message_english,
+            transcript_blob=transcript_blob,
+            dialogue_state=dialogue_state,
+            submission_type=submission_type,
         )
 
     # ready — persist a pending stub now, run finalize_submission in the background
@@ -500,6 +557,8 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
         status=Status.open,
         pipeline_status=PipelineStatus.pending,
         report_count=1,
+        owner_user_id=owner_user_id,
+        concerned_leader_id=payload.concerned_leader_id,
         created_at=now,
         updated_at=now,
     )
@@ -525,6 +584,100 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
         pipeline_status=PipelineStatus.pending.value,
         confirmation_text=get_template(confirmation_key, detected_lang),
     )
+
+
+def _question_response(pq: "PendingQuestion", question_en: str, question_localized: str) -> ChatTurnResponse:
+    return ChatTurnResponse(
+        kind="question",
+        detected_language=pq.detected_lang,
+        new_message_english=pq.new_message_english,
+        question_key=pq.question_key,
+        question_text=question_localized,
+        question_text_english=question_en,
+        slots_so_far=LocationSlotsOut(
+            address=pq.dialogue_state.location_address,
+            area=pq.dialogue_state.location_area,
+            pincode=pq.dialogue_state.location_pincode,
+        ),
+        submission_type_hint=pq.submission_type,
+    )
+
+
+def process_turn(payload: ChatMessageRequest, session: Session, background_tasks=None,
+                  owner_user_id: Optional[uuid.UUID] = None) -> ChatTurnResponse:
+    """Non-streaming entry point — unchanged behavior from before FR15."""
+    result = _prepare_turn(payload, session, background_tasks, owner_user_id)
+    if isinstance(result, ChatTurnResponse):
+        return result
+
+    pq: PendingQuestion = result
+    try:
+        composed = run_reply_composer(pq.transcript_blob, pq.need, pq.language_name)
+    except Exception as e:
+        logger.error(f"Reply composer exception: {e}")
+        composed = None
+
+    if composed:
+        question_en, question_localized = composed.reply_english, composed.reply_localized
+    else:
+        # Graceful fallback — static template, never crash the turn on a
+        # single bad LLM response.
+        question_en = get_template(pq.question_key, "en")
+        question_localized = get_template(pq.question_key, pq.detected_lang)
+
+    return _question_response(pq, question_en, question_localized)
+
+
+def stream_turn_reply(payload: ChatMessageRequest, session: Session, background_tasks=None,
+                       owner_user_id: Optional[uuid.UUID] = None) -> "Iterator[str]":
+    """
+    FR15 — SSE entry point for POST /intake/message/stream. Shares all
+    decision logic with process_turn via _prepare_turn; only the reply-text
+    step differs. Yields pre-formatted SSE lines directly so intake.py can
+    just pass them through to a StreamingResponse.
+
+    Non-English replies (Hindi/Marathi) deliberately do NOT stream — they go
+    through the exact same non-streaming ComposedReply path as process_turn,
+    sent as a single "final" event, so translation quality stays exactly
+    what the existing eval harness already validated. Only English replies
+    get real token-by-token streaming. See MVP_roadmap.md Phase 4.
+    """
+    result = _prepare_turn(payload, session, background_tasks, owner_user_id)
+
+    if isinstance(result, ChatTurnResponse):
+        yield f"event: final\ndata: {result.model_dump_json()}\n\n"
+        return
+
+    pq: PendingQuestion = result
+
+    if pq.detected_lang != "en":
+        try:
+            composed = run_reply_composer(pq.transcript_blob, pq.need, pq.language_name)
+        except Exception as e:
+            logger.error(f"Reply composer exception: {e}")
+            composed = None
+        if composed:
+            question_en, question_localized = composed.reply_english, composed.reply_localized
+        else:
+            question_en = get_template(pq.question_key, "en")
+            question_localized = get_template(pq.question_key, pq.detected_lang)
+        yield f"event: final\ndata: {_question_response(pq, question_en, question_localized).model_dump_json()}\n\n"
+        return
+
+    full_text = ""
+    try:
+        for chunk in stream_reply_composer(pq.transcript_blob, pq.need):
+            full_text += chunk
+            yield f"event: chunk\ndata: {json.dumps({'text': chunk})}\n\n"
+    except Exception as e:
+        logger.error(f"Streaming reply composer exception: {e}")
+
+    # Nothing streamed successfully (immediate failure) -> static template.
+    # Partial text (failed partway through) is used as-is rather than
+    # discarded — better than nothing, and a full retry can't resume a
+    # stream cleanly mid-sentence.
+    final_text = full_text.strip() or get_template(pq.question_key, "en")
+    yield f"event: final\ndata: {_question_response(pq, final_text, final_text).model_dump_json()}\n\n"
 
 
 def _run_finalize_and_update(
@@ -601,3 +754,35 @@ def _run_finalize_and_update(
                     session.commit()
             except Exception as inner_e:
                 logger.error(f"[id={stub_id}] Failed to mark pipeline_status=failed: {inner_e}")
+
+
+def resume_stuck_pipelines():
+    """
+    Job durability (NFR7): called once at app startup. A complaint stuck in
+    `pending`/`processing` means the process died mid-finalize (VM restart,
+    crash) before the background task finished — every field the finalize
+    pipeline needs is already on that row (raw_text, submission_type,
+    citizen_*, location_*), so it can just be re-run from scratch rather than
+    needing a separate resumable-job queue. Each stuck row runs in its own
+    thread so a slow/stuck one can't block the others or delay app startup.
+    """
+    from threading import Thread
+    from app.db.session import engine
+
+    with Session(engine) as session:
+        stuck = session.exec(
+            select(Complaint).where(Complaint.pipeline_status.in_([PipelineStatus.pending, PipelineStatus.processing]))
+        ).all()
+
+    if not stuck:
+        return
+
+    logger.warning(f"Resuming {len(stuck)} complaint(s) stuck in pending/processing from a prior run")
+    for row in stuck:
+        Thread(
+            target=_run_finalize_and_update,
+            args=(row.id, row.raw_text, row.submission_type.value,
+                  row.citizen_name, row.citizen_phone, row.citizen_last_name,
+                  row.location_address, row.location_area, row.location_pincode),
+            daemon=True,
+        ).start()

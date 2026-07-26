@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import LeaderFeedbackPrompt from './LeaderFeedbackPrompt';
+import { revealPhone } from '../api/client';
 
 // Render extracted value — if the model truly couldn't determine it, show a
 // distinct styled placeholder rather than the raw "not specified" string.
@@ -8,6 +9,41 @@ function ExtractedValue({ value }) {
     return <span className="text-gray-400 italic text-[10px]">Not identified</span>;
   }
   return <span className="text-gray-900">{value}</span>;
+}
+
+// FR12: phone masked by default; a leader can reveal it, which is logged
+// server-side (who/when) on every reveal.
+function PhoneNumber({ complaintId, maskedPhone }) {
+  const [phone, setPhone] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (phone) return <span className="font-medium text-gray-900">{phone}</span>;
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="font-medium text-gray-900">{maskedPhone}</span>
+      <button
+        onClick={async () => {
+          setLoading(true);
+          setFailed(false);
+          try {
+            const { phone } = await revealPhone(complaintId);
+            setPhone(phone);
+          } catch {
+            setFailed(true);
+          } finally {
+            setLoading(false);
+          }
+        }}
+        disabled={loading}
+        className="text-[#0e75c6] hover:underline text-[10px] font-semibold disabled:opacity-50"
+      >
+        {loading ? 'Revealing…' : 'Reveal'}
+      </button>
+      {failed && <span className="text-red-500 text-[10px]">Failed — try again</span>}
+    </span>
+  );
 }
 
 export default function ReasoningPanel({ issue }) {
@@ -19,8 +55,8 @@ export default function ReasoningPanel({ issue }) {
           <p className="text-gray-700 italic bg-white p-3 rounded-lg border border-gray-200 shadow-sm leading-relaxed text-[11px]">
             "{issue.raw_text}"
           </p>
-          <div className="mt-3 text-[10px] text-gray-500">
-            Reported by: <span className="font-medium text-gray-900">{issue.citizen_name} {issue.citizen_last_name}</span> • Phone: {issue.citizen_phone}
+          <div className="mt-3 text-[10px] text-gray-500 flex items-center gap-1 flex-wrap">
+            Reported by: <span className="font-medium text-gray-900">{issue.citizen_name} {issue.citizen_last_name}</span> • Phone: <PhoneNumber complaintId={issue.id} maskedPhone={issue.citizen_phone} />
           </div>
         </div>
         

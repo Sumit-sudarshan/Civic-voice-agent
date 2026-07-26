@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Home, MessageSquareText, CheckCircle2 } from 'lucide-react';
-import { citizenSignup } from '../api/auth';
+import { Home, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { leaderSignup } from '../api/auth';
 
 const initialForm = {
-  firstName: '', lastName: '', email: '', phone: '',
+  name: '', email: '', phone: '', city: '', pincode: '',
   password: '', confirmPassword: '',
 };
 
-export default function SignupPage({ onBack, onGoToLogin }) {
+export default function LeaderSignupPage({ onBack, onGoToLogin }) {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -30,40 +30,40 @@ export default function SignupPage({ onBack, onGoToLogin }) {
 
     setSubmitting(true);
     try {
-      await citizenSignup({
-        firstName: form.firstName, lastName: form.lastName,
-        phone: form.phone, email: form.email, password: form.password,
+      await leaderSignup({
+        name: form.name, phone: form.phone, email: form.email,
+        password: form.password, city: form.city, pincode: form.pincode,
       });
       setDone(true);
     } catch (err) {
-      setError(err.message || 'Signup failed.');
+      setError(err.message || 'Registration failed.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const inputCls = "flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const inputCls = "flex-1 border border-gray-300 rounded-full px-4 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-green-400";
   const labelCls = "text-sm font-bold text-black w-36 shrink-0";
 
   return (
-    <div className="min-h-full flex flex-col font-sans bg-[#ebf5fb]">
+    <div className="min-h-full flex flex-col font-sans bg-[#eef6ee]">
       {/* Logo header */}
       <div className="bg-white px-4 sm:px-8 py-2 flex justify-between items-center border-b border-gray-200 shadow-sm">
         <div className="flex items-center gap-4 cursor-pointer" onClick={onBack}>
-          <div className="h-9 w-9 rounded-lg bg-[#0e75c6] flex items-center justify-center shrink-0">
-            <MessageSquareText className="w-5 h-5 text-white" />
+          <div className="h-9 w-9 rounded-lg bg-[#1c7a3c] flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-lg sm:text-xl font-bold text-black">Citizen's Portal</span>
+            <span className="text-lg sm:text-xl font-bold text-black">Leader's Portal</span>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <div className="bg-[#0e75c6] text-white px-4 sm:px-8 flex items-center gap-6 text-sm font-semibold shadow-md">
-        <button onClick={onBack} className="py-3 px-2 hover:bg-[#1f93ff] transition-colors"><Home className="w-5 h-5" /></button>
-        <button className="py-3 px-2 hover:bg-[#1f93ff] transition-colors hidden sm:block text-white">Track your Complaint</button>
-        <button className="py-3 px-2 hover:bg-[#1f93ff] transition-colors hidden sm:block text-white">Contact Us</button>
+      <div className="bg-[#1c7a3c] text-white px-4 sm:px-8 flex items-center gap-6 text-sm font-semibold shadow-md">
+        <button onClick={onBack} className="py-3 px-2 hover:bg-[#25963f] transition-colors"><Home className="w-5 h-5" /></button>
+        <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Your Ward Dashboard</button>
+        <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Contact Support</button>
       </div>
 
       {/* Signup card */}
@@ -72,14 +72,14 @@ export default function SignupPage({ onBack, onGoToLogin }) {
           {done ? (
             <div className="text-center py-4">
               <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-              <p className="font-bold text-black text-sm mb-1">Account Created</p>
+              <p className="font-bold text-black text-sm mb-1">Registration Submitted</p>
               <p className="text-xs text-gray-600 mb-5">
-                Welcome, <strong>{form.firstName} {form.lastName}</strong>. Check your email to confirm your
-                account, then log in with your email and password.
+                Welcome, <strong>{form.name}</strong>. Check your email to confirm your account, then log in to
+                view complaints raised in your jurisdiction ({form.city}, {form.pincode}).
               </p>
               <button
                 onClick={onGoToLogin}
-                className="bg-[#0e75c6] text-white px-6 py-2 rounded font-semibold text-sm hover:bg-[#054483] transition-colors"
+                className="bg-[#1c7a3c] text-white px-6 py-2 rounded font-semibold text-sm hover:bg-[#155c2d] transition-colors"
               >
                 Go to Login
               </button>
@@ -87,27 +87,27 @@ export default function SignupPage({ onBack, onGoToLogin }) {
           ) : (
             <>
               <div className="flex items-center justify-center mb-5 gap-3">
-                <div className="flex-1 h-px bg-green-600" />
-                <h2 className="text-lg font-bold text-green-700 tracking-widest whitespace-nowrap">CITIZEN SIGN UP</h2>
-                <div className="flex-1 h-px bg-green-600" />
+                <div className="flex-1 h-px bg-[#1c7a3c]" />
+                <h2 className="text-lg font-bold text-[#1c7a3c] tracking-widest whitespace-nowrap">LEADER REGISTRATION</h2>
+                <div className="flex-1 h-px bg-[#1c7a3c]" />
               </div>
+
+              <p className="text-xs text-gray-500 text-center mb-4">
+                Register as a corporator or ward representative to receive complaints from citizens in your
+                jurisdiction. No approval step — your account is active as soon as you confirm your email.
+              </p>
 
               <div className="text-right mb-4">
                 <button type="button" onClick={onGoToLogin} className="text-blue-600 text-sm hover:underline font-medium">
-                  Already have an account? Log in
+                  Already registered? Log in
                 </button>
               </div>
               <hr className="mb-5" />
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <label className={labelCls}>FIRST NAME: <span className="text-red-500">*</span></label>
-                  <input required name="firstName" value={form.firstName} onChange={handleChange} placeholder="First Name" className={inputCls} />
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className={labelCls}>LAST NAME: <span className="text-red-500">*</span></label>
-                  <input required name="lastName" value={form.lastName} onChange={handleChange} placeholder="Last Name" className={inputCls} />
+                  <label className={labelCls}>NAME: <span className="text-red-500">*</span></label>
+                  <input required name="name" value={form.name} onChange={handleChange} placeholder="Full Name" className={inputCls} />
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -118,6 +118,16 @@ export default function SignupPage({ onBack, onGoToLogin }) {
                 <div className="flex items-center gap-3">
                   <label className={labelCls}>MOBILE NO: <span className="text-red-500">*</span></label>
                   <input required type="tel" name="phone" value={form.phone} onChange={handleChange} placeholder="Mobile No." className={inputCls} />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className={labelCls}>CITY: <span className="text-red-500">*</span></label>
+                  <input required name="city" value={form.city} onChange={handleChange} placeholder="City you represent" className={inputCls} />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className={labelCls}>PINCODE: <span className="text-red-500">*</span></label>
+                  <input required name="pincode" value={form.pincode} onChange={handleChange} placeholder="Jurisdiction pincode" className={inputCls} />
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -133,8 +143,8 @@ export default function SignupPage({ onBack, onGoToLogin }) {
                 {error && <p className="text-red-500 text-xs text-center">{error}</p>}
 
                 <div className="flex items-center justify-center pt-2">
-                  <button type="submit" disabled={submitting} className="bg-green-600 text-white px-8 py-2 rounded font-semibold hover:bg-green-700 transition-colors text-sm disabled:opacity-50">
-                    {submitting ? 'Creating…' : 'Submit'}
+                  <button type="submit" disabled={submitting} className="bg-[#1c7a3c] text-white px-8 py-2 rounded font-semibold hover:bg-[#155c2d] transition-colors text-sm disabled:opacity-50">
+                    {submitting ? 'Registering…' : 'Register'}
                   </button>
                 </div>
               </form>

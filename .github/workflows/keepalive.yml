@@ -1,0 +1,33 @@
+name: Keep-alive ping
+
+# Supabase's free tier auto-pauses a project after 7 days with no database
+# activity. A plain HTTP ping doesn't prevent that on its own — it only
+# works because /health (backend/app/main.py) does a lightweight `SELECT 1`
+# as part of the request, specifically so this job's ping registers as real
+# DB activity. Every 12h is comfortably inside the 7-day window with margin
+# for a missed run or two.
+#
+# HEALTH_URL is a repo VARIABLE, not hardcoded here: the app is only
+# reachable via a Cloudflare quick tunnel (MVP_Design.md §3.1), whose
+# *.trycloudflare.com hostname is reassigned every time cloudflared/the VM
+# restarts. Update it with `gh variable set HEALTH_URL --body <new-url>/health`
+# when that happens — no code change/redeploy needed for that alone.
+on:
+  schedule:
+    - cron: '43 */12 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTH_URL}" ]; then
+            echo "::error::HEALTH_URL repo variable is not set"
+            exit 1
+          fi
+          curl -sf "${HEALTH_URL}"
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}

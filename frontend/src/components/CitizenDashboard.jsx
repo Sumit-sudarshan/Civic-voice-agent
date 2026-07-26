@@ -3,7 +3,6 @@ import { Home, LogOut, FileText, AlertTriangle, Clock, RefreshCw, MessageSquareT
 import { fetchSubmissionStatus } from '../api/client';
 import { getRejectionMessage } from '../api/rejectionMessages';
 import { getTrackedSubmissions, removeTrackedSubmissions, hasFeedback, markFeedbackGiven } from '../api/trackedSubmissions';
-import { getIdentity } from '../api/identity';
 import ChatIntake from './ChatIntake';
 import ExtractionFeedbackCard from './ExtractionFeedbackCard';
 
@@ -187,10 +186,7 @@ function SubmissionTracker({ user, type }) {
 export default function CitizenDashboard({ user, onLogout }) {
   const [showModal, setShowModal]   = useState(false);
   const [activeView, setActiveView] = useState('home'); // 'home' | 'tracker-complaint' | 'tracker-suggestion'
-  // `user` (the login ID, e.g. "CivicAgent") stays the localStorage/tracking
-  // key throughout — only the display name shown to the citizen changes.
-  const identity = getIdentity();
-  const displayName = `${identity.firstName} ${identity.lastName}`;
+  const displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
 
   return (
     <div className="min-h-full flex flex-col font-sans bg-[#ebf5fb]">
@@ -228,12 +224,12 @@ export default function CitizenDashboard({ user, onLogout }) {
       {activeView === 'tracker-complaint' ? (
         <div className="flex-1 px-6 sm:px-12 py-10">
           <h2 className="text-lg font-bold text-black mb-4">Your Complaints</h2>
-          <SubmissionTracker user={user} type="complaint" />
+          <SubmissionTracker user={user.id} type="complaint" />
         </div>
       ) : activeView === 'tracker-suggestion' ? (
         <div className="flex-1 px-6 sm:px-12 py-10">
           <h2 className="text-lg font-bold text-black mb-4">Your Suggestions</h2>
-          <SubmissionTracker user={user} type="suggestion" />
+          <SubmissionTracker user={user.id} type="suggestion" />
         </div>
       ) : (
         <div className="flex-1 px-6 sm:px-12 py-10">

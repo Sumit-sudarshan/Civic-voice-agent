@@ -144,3 +144,12 @@ class ExtractionFeedback(SQLModel, table=True):
     source: str = "citizen"          # "citizen" | "leader"
     aspect: Optional[str] = None     # citizen: "overall"; leader: which facet was checked
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PhoneRevealLog(SQLModel, table=True):
+    """FR12 audit trail: every time a leader reveals a masked citizen phone
+    number, who did it and when is recorded here — never deleted."""
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    complaint_id: uuid.UUID = Field(foreign_key="complaint.id")
+    leader_id: uuid.UUID = Field(foreign_key="leader.id")
+    revealed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

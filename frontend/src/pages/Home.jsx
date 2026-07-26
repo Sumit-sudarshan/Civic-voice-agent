@@ -88,8 +88,10 @@ function TopIssueCard({ issue, rank }) {
   );
 }
 
+const POLL_INTERVAL_MS = 10000; // FR10 — dashboard auto-refreshes without a manual reload
+
 // ── Main page ──────────────────────────────────────────────────────────────
-export default function Home() {
+export default function Home({ leaderName }) {
   const [stats, setStats] = useState({
     total_issues: 0, urgent: 0, open: 0, resolved: 0, suggestions: 0,
   });
@@ -130,6 +132,15 @@ export default function Home() {
   useEffect(() => {
     loadTopIssues(filters.status === 'resolved', filters.timeRange);
   }, [loadTopIssues, refreshToken, filters.status, filters.timeRange]);
+
+  // FR10: poll every 10s so new/updated complaints appear without a manual refresh.
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadStats();
+      loadTopIssues(filters.status === 'resolved', filters.timeRange);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [loadStats, loadTopIssues, filters.status, filters.timeRange]);
 
   // Reset how many rows are revealed whenever the underlying set or filters change
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [topData, query, filters]);
@@ -178,7 +189,7 @@ export default function Home() {
     <div className="px-6 py-5 max-w-6xl mx-auto">
       {/* ── Header ── */}
       <div className="mb-4">
-        <h1 className="text-xl font-bold text-black mb-0.5">Welcome back Sumit</h1>
+        <h1 className="text-xl font-bold text-black mb-0.5">Welcome back{leaderName ? `, ${leaderName}` : ''}</h1>
         <p className="text-xs text-gray-500">Here's what's happening across your area today.</p>
       </div>
 

@@ -1,3 +1,5 @@
+import time
+import logging
 import ollama
 import numpy as np
 from typing import List, Optional
@@ -6,17 +8,33 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.models.db_models import Complaint, Category, ComplaintReport, Status
 
+logger = logging.getLogger(__name__)
+
 # Embeddings run on local Ollama by design — the PII-bearing complaint text
 # these vectors are derived from never leaves the VM. See MVP_Design.md §3.1.
-client = ollama.Client(host=settings.OLLAMA_HOST)
+# Part of the async finalize pipeline (never the sync conversational loop),
+# so it gets that budget: ~20s timeout, 3 retries. See NFR7/NFR8.
+client = ollama.Client(host=settings.OLLAMA_HOST, timeout=settings.ASYNC_LLM_TIMEOUT_S)
 
 def embed(text: str) -> List[float]:
-    """Generate embeddings for text using the local Ollama embedding model."""
-    response = client.embeddings(
-        model=settings.EMBEDDING_MODEL,
-        prompt=text
-    )
-    return response["embedding"]
+    """
+    Generate embeddings for text using the local Ollama embedding model.
+    Retries on failure (bounded, with backoff) before giving up — the caller
+    (finalize_submission) degrades gracefully to embedding=None (dedup
+    skipped, submission still saved) only once every attempt here fails.
+    """
+    total_attempts = settings.ASYNC_LLM_RETRIES + 1
+    for attempt in range(total_attempts):
+        try:
+            response = client.embeddings(model=settings.EMBEDDING_MODEL, prompt=text)
+            return response["embedding"]
+        except Exception as e:
+            is_last_attempt = attempt == total_attempts - 1
+            logger.warning(f"Embedding call error on attempt {attempt + 1}/{total_attempts}: {e}")
+            if is_last_attempt:
+                raise
+            if attempt < len(settings.ASYNC_LLM_BACKOFF_S):
+                time.sleep(settings.ASYNC_LLM_BACKOFF_S[attempt])
 
 def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
     """Calculate cosine similarity between two vectors."""

@@ -3,7 +3,8 @@ from sqlmodel import Session, select
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from app.db.session import get_session
-from app.models.db_models import Complaint, SubmissionType, Status, UrgencyLevel, PipelineStatus
+from app.models.db_models import Complaint, Leader, SubmissionType, Status, UrgencyLevel, PipelineStatus
+from app.auth.deps import get_current_leader
 from app.llm.client import call_llm_text
 from app.llm.prompts.summarize import (
     VERDICT_SYSTEM_PROMPT,
@@ -11,6 +12,7 @@ from app.llm.prompts.summarize import (
     render_report,
 )
 from app.pipeline.facts import build_issue_facts
+from app.utils.validators import mask_phone
 
 router = APIRouter(prefix="/stats", tags=["Stats"])
 
@@ -43,8 +45,8 @@ def _valid_complaints(all_records):
 
 
 @router.get("/summary")
-def get_summary(session: Session = Depends(get_session)):
-    all_records = session.exec(select(Complaint)).all()
+def get_summary(session: Session = Depends(get_session), leader: Leader = Depends(get_current_leader)):
+    all_records = session.exec(select(Complaint).where(Complaint.concerned_leader_id == leader.id)).all()
 
     complaints = _valid_complaints(all_records)
     suggestions = [
@@ -75,9 +77,10 @@ def get_summary(session: Session = Depends(get_session)):
 @router.get("/trends")
 def get_trends(
     session:    Session = Depends(get_session),
+    leader:     Leader  = Depends(get_current_leader),
     time_range: str     = Query("all", description="24h | 7d | 30d | all"),
 ):
-    all_records = session.exec(select(Complaint)).all()
+    all_records = session.exec(select(Complaint).where(Complaint.concerned_leader_id == leader.id)).all()
 
     # Only count valid, fully-processed complaints in charts
     all_complaints = _valid_complaints(all_records)
@@ -185,6 +188,7 @@ _RANGE_LABELS = {
 @router.get("/issues")
 def get_issues(
     session:    Session = Depends(get_session),
+    leader:     Leader  = Depends(get_current_leader),
     submission_type: str = Query("complaint", description="complaint | suggestion"),
     archived:   bool = Query(False, description="False (default) = active issues only; True = resolved/archived issues"),
     time_range: Optional[str] = Query(None, description="24h | 7d | 15d | 30d | 6mo | 1y"),
@@ -192,13 +196,14 @@ def get_issues(
     """
     Returns ALL valid, non-duplicate complaints or suggestions — no top-N cap
     — ordered by most recent first, for the dashboard's full issue list
-    (client-side filtered/paginated from there).
+    (client-side filtered/paginated from there). Scoped to this leader's own
+    jurisdiction (FR9/FR10) — never another leader's complaints.
 
     Resolved issues are archived: they're excluded from the default (active)
     list and only returned when archived=True, so the leader's main dashboard
     only ever shows things still needing attention.
     """
-    all_records = session.exec(select(Complaint)).all()
+    all_records = session.exec(select(Complaint).where(Complaint.concerned_leader_id == leader.id)).all()
 
     if submission_type == "suggestion":
         items = [
@@ -243,7 +248,7 @@ def get_issues(
             "raw_text":                   c.raw_text,
             "citizen_name":               c.citizen_name,
             "citizen_last_name":          c.citizen_last_name,
-            "citizen_phone":              c.citizen_phone,
+            "citizen_phone":              mask_phone(c.citizen_phone),  # FR12 — revealed via POST /complaints/{id}/reveal-phone
             "pipeline_status":            c.pipeline_status.value if c.pipeline_status else None,
             "is_valid_submission":        c.is_valid_submission,
             **build_issue_facts(c, session),
@@ -371,6 +376,7 @@ def build_report_facts(matching: list, session: Session, submission_type: str, t
 @router.get("/summary-report")
 def get_summary_report(
     session:    Session = Depends(get_session),
+    leader:     Leader  = Depends(get_current_leader),
     time_range: str     = Query("7d", description="24h | 7d | 15d | 30d | 6mo | 1y"),
     submission_type: str = Query("complaint", description="complaint | suggestion"),
     refresh:    bool    = Query(False, description="Force regenerate — bypass cache"),
@@ -381,7 +387,7 @@ def get_summary_report(
     llm/prompts/summarize.py for why this is structured as synthesis.
     """
     now = datetime.now(timezone.utc)
-    all_records = session.exec(select(Complaint)).all()
+    all_records = session.exec(select(Complaint).where(Complaint.concerned_leader_id == leader.id)).all()
 
     if submission_type == "suggestion":
         matching = [

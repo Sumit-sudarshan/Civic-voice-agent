@@ -19,7 +19,7 @@ def _turn(new_message: str) -> ChatMessageRequest:
         new_message=new_message,
         history=[],
         citizen_first_name="Test",
-        citizen_phone="000",
+        citizen_phone="9876543210",
     )
 
 
@@ -80,7 +80,7 @@ def test_finalize_submission_full_flow(monkeypatch):
         raw_text="Huge pothole",
         submission_type=SubmissionType.complaint,
         citizen_name="Bob",
-        citizen_phone="123",
+        citizen_phone="9876543210",
     )
 
     assert result.is_valid_submission is True

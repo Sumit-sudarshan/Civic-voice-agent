@@ -1,0 +1,174 @@
+import logging
+from typing import Optional
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr, field_validator
+from sqlmodel import Session
+
+from app.config import settings
+from app.db.session import get_session
+from app.models.db_models import Leader
+from app.auth.deps import CurrentUser, get_current_user, is_https_request, SESSION_COOKIE
+from app.utils.validators import validate_phone, validate_pincode
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/auth", tags=["Auth"])
+
+_AUTH_HEADERS = {"apikey": settings.PUBLISHABLE_KEY, "Content-Type": "application/json"}
+_SUPABASE_AUTH_URL = f"{settings.SUPABASE_URL}/auth/v1"
+
+# Access tokens are short-lived (Supabase default ~1h) and this MVP does not
+# implement silent refresh — a session simply expires and the user logs in
+# again. Named as a known gap rather than built out, given the assumed scale
+# (a few hundred citizens, not a long-running always-on client). Revisit if
+# session drop-outs during a single chat conversation turn out to be common.
+
+
+class CitizenSignupRequest(BaseModel):
+    first_name: str
+    last_name: Optional[str] = None
+    phone: str
+    email: EmailStr
+    password: str
+
+    _validate_phone = field_validator("phone")(validate_phone)
+
+
+class LeaderSignupRequest(BaseModel):
+    name: str
+    phone: str
+    email: EmailStr
+    password: str
+    city: str
+    pincode: str
+
+    _validate_phone = field_validator("phone")(validate_phone)
+    _validate_pincode = field_validator("pincode")(validate_pincode)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+def _supabase_error_detail(resp: httpx.Response) -> str:
+    try:
+        body = resp.json()
+    except ValueError:
+        return "Authentication request failed"
+    code = body.get("error_code")
+    if code == "email_not_confirmed":
+        return "Please confirm your email (check your inbox) before logging in."
+    if code == "user_already_exists":
+        return "An account with this email already exists."
+    return body.get("msg") or body.get("error_description") or "Authentication request failed"
+
+
+@router.post("/citizen/signup", status_code=201)
+def citizen_signup(payload: CitizenSignupRequest):
+    body = {
+        "email": payload.email,
+        "password": payload.password,
+        "data": {
+            "role": "citizen",
+            "first_name": payload.first_name,
+            "last_name": payload.last_name,
+            "phone": payload.phone,
+        },
+    }
+    resp = httpx.post(f"{_SUPABASE_AUTH_URL}/signup", headers=_AUTH_HEADERS, json=body, timeout=20)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
+    return {"message": "Account created. Check your email to confirm it before logging in."}
+
+
+@router.post("/leader/signup", status_code=201)
+def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_session)):
+    body = {
+        "email": payload.email,
+        "password": payload.password,
+        "data": {
+            "role": "leader",
+            "name": payload.name,
+            "phone": payload.phone,
+        },
+    }
+    resp = httpx.post(f"{_SUPABASE_AUTH_URL}/signup", headers=_AUTH_HEADERS, json=body, timeout=20)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
+
+    auth_user_id = resp.json()["id"]
+    leader = Leader(
+        auth_user_id=auth_user_id,
+        name=payload.name,
+        phone=payload.phone,
+        email=payload.email,
+        city=payload.city,
+        pincode=payload.pincode,
+    )
+    session.add(leader)
+    session.commit()
+    return {"message": "Account created. Check your email to confirm it before logging in."}
+
+
+@router.post("/login")
+def login(payload: LoginRequest, request: Request, response: Response):
+    resp = httpx.post(
+        f"{_SUPABASE_AUTH_URL}/token?grant_type=password",
+        headers=_AUTH_HEADERS,
+        json={"email": payload.email, "password": payload.password},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=401, detail=_supabase_error_detail(resp))
+
+    data = resp.json()
+    access_token = data["access_token"]
+    user = data["user"]
+    meta = user.get("user_metadata") or {}
+
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=access_token,
+        httponly=True,
+        secure=is_https_request(request),
+        samesite="lax",
+        max_age=data.get("expires_in", 3600),
+        path="/",
+    )
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "role": meta.get("role", "citizen"),
+        "first_name": meta.get("first_name"),
+        "last_name": meta.get("last_name"),
+        "name": meta.get("name"),
+    }
+
+
+@router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"message": "Logged out"}
+
+
+@router.get("/me")
+def me(current_user: CurrentUser = Depends(get_current_user), session: Session = Depends(get_session)):
+    result = {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "role": current_user.role,
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name,
+        "phone": current_user.phone,
+    }
+    if current_user.role == "leader":
+        from sqlmodel import select
+        leader = session.exec(select(Leader).where(Leader.auth_user_id == current_user.id)).first()
+        if leader:
+            result["leader"] = {
+                "id": str(leader.id), "name": leader.name,
+                "city": leader.city, "pincode": leader.pincode,
+            }
+    return result

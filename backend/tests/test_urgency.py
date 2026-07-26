@@ -35,7 +35,7 @@ def test_finalize_submission_skips_urgency_for_suggestions(monkeypatch):
         raw_text="Please build a park here",
         submission_type=SubmissionType.suggestion,
         citizen_name="Test",
-        citizen_phone="123",
+        citizen_phone="9876543210",
     )
 
     assert result.is_valid_submission is True
