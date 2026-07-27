@@ -30,7 +30,7 @@ export default function Suggestions() {
           <h1 className="text-xl font-bold text-black mb-0.5">Suggestions</h1>
           <p className="text-xs text-gray-500">Citizen ideas for improving the community.</p>
         </div>
-        <button onClick={load} className="text-[#0e75c6] hover:text-[#054483] flex items-center gap-1.5 text-xs font-medium transition-colors">
+        <button onClick={load} className="text-[#1c7a3c] hover:text-[#155c2d] flex items-center gap-1.5 text-xs font-medium transition-colors">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
       </div>

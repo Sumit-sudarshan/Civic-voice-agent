@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import Optional
 
 import httpx
@@ -36,7 +37,13 @@ class CitizenSignupRequest(BaseModel):
 
 
 class LeaderSignupRequest(BaseModel):
-    name: str
+    # Split into first/last (matching CitizenSignupRequest) rather than a
+    # single free-text NAME field — the single field meant whatever a leader
+    # typed (e.g. just "Sumit") was displayed everywhere else verbatim,
+    # including the citizen-facing FR9 concerned-person dropdown, with no
+    # structured way to show a proper full name.
+    first_name: str
+    last_name: Optional[str] = None
     phone: str
     email: EmailStr
     password: str
@@ -65,17 +72,54 @@ def _signup_message(body: dict) -> str:
     return "Account created. Check your email to confirm it before logging in."
 
 
+def _serialize_identity(auth_user_id: str, email: str, meta: dict, session: Session) -> dict:
+    """
+    Shared shape for "who is currently logged in", used by both /login and
+    /me. /login previously built its own, thinner response by hand — it had
+    `name` (from the leader signup form's single NAME field) but no nested
+    `leader` object, while /me queried the `leader` table and returned
+    `leader: {name, city, pincode}` but never `name` at the top level.
+    Frontend code reading `user.leader?.name` immediately after login (before
+    any subsequent /me call) got nothing, silently falling back further than
+    intended. One function now backs both routes so they can't drift apart
+    again.
+    """
+    role = meta.get("role", "citizen")
+    result = {
+        "id": auth_user_id,
+        "email": email,
+        "role": role,
+        "first_name": meta.get("first_name"),
+        "last_name": meta.get("last_name"),
+        "name": meta.get("name"),
+        "phone": meta.get("phone"),
+    }
+    if role == "leader":
+        from sqlmodel import select
+        leader = session.exec(select(Leader).where(Leader.auth_user_id == uuid.UUID(str(auth_user_id)))).first()
+        if leader:
+            result["leader"] = {
+                "id": str(leader.id), "name": leader.name,
+                "city": leader.city, "pincode": leader.pincode,
+            }
+    return result
+
+
 def _supabase_error_detail(resp: httpx.Response) -> str:
     try:
         body = resp.json()
     except ValueError:
         return "Authentication request failed"
     code = body.get("error_code")
-    if code == "email_not_confirmed":
+    msg = body.get("msg") or body.get("error_description") or ""
+    if code == "email_not_confirmed" or "confirm" in msg.lower():
+        # Matched on the message text too, not just the exact error_code
+        # string — GoTrue's error shapes have changed across API versions
+        # before, and this is the one case worth never silently missing.
         return "Please confirm your email (check your inbox) before logging in."
     if code == "user_already_exists":
         return "An account with this email already exists."
-    return body.get("msg") or body.get("error_description") or "Authentication request failed"
+    return msg or "Authentication request failed"
 
 
 @router.post("/citizen/signup", status_code=201)
@@ -98,12 +142,15 @@ def citizen_signup(payload: CitizenSignupRequest):
 
 @router.post("/leader/signup", status_code=201)
 def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_session)):
+    full_name = " ".join(p for p in (payload.first_name, payload.last_name) if p).strip()
     body = {
         "email": payload.email,
         "password": payload.password,
         "data": {
             "role": "leader",
-            "name": payload.name,
+            "first_name": payload.first_name,
+            "last_name": payload.last_name,
+            "name": full_name,
             "phone": payload.phone,
         },
     }
@@ -126,7 +173,7 @@ def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_s
 
     leader = Leader(
         auth_user_id=auth_user_id,
-        name=payload.name,
+        name=full_name,
         phone=payload.phone,
         email=payload.email,
         city=payload.city,
@@ -138,7 +185,7 @@ def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_s
 
 
 @router.post("/login")
-def login(payload: LoginRequest, request: Request, response: Response):
+def login(payload: LoginRequest, request: Request, response: Response, session: Session = Depends(get_session)):
     resp = httpx.post(
         f"{_SUPABASE_AUTH_URL}/token?grant_type=password",
         headers=_AUTH_HEADERS,
@@ -162,14 +209,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         max_age=data.get("expires_in", 3600),
         path="/",
     )
-    return {
-        "id": user["id"],
-        "email": user["email"],
-        "role": meta.get("role", "citizen"),
-        "first_name": meta.get("first_name"),
-        "last_name": meta.get("last_name"),
-        "name": meta.get("name"),
-    }
+    return _serialize_identity(user["id"], user["email"], meta, session)
 
 
 @router.post("/logout")
@@ -180,20 +220,11 @@ def logout(response: Response):
 
 @router.get("/me")
 def me(current_user: CurrentUser = Depends(get_current_user), session: Session = Depends(get_session)):
-    result = {
-        "id": str(current_user.id),
-        "email": current_user.email,
+    meta = {
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
+        "name": current_user.name,
         "phone": current_user.phone,
     }
-    if current_user.role == "leader":
-        from sqlmodel import select
-        leader = session.exec(select(Leader).where(Leader.auth_user_id == current_user.id)).first()
-        if leader:
-            result["leader"] = {
-                "id": str(leader.id), "name": leader.name,
-                "city": leader.city, "pincode": leader.pincode,
-            }
-    return result
+    return _serialize_identity(str(current_user.id), current_user.email, meta, session)

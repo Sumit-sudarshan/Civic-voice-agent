@@ -96,7 +96,7 @@ export default function FloatingSummaryBot() {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-8 right-8 bg-[#0e75c6] text-white px-5 py-4 rounded-full shadow-2xl hover:bg-[#054483] hover:scale-105 transition-all flex items-center gap-2.5 font-medium z-50 border border-[#054483]"
+                className="fixed bottom-8 right-8 bg-[#1c7a3c] text-white px-5 py-4 rounded-full shadow-2xl hover:bg-[#155c2d] hover:scale-105 transition-all flex items-center gap-2.5 font-medium z-50 border border-[#155c2d]"
             >
                 <Sparkles className="w-5 h-5 text-amber-300" />
                 <span className="hidden sm:inline tracking-wide">AI Summary</span>
@@ -117,7 +117,7 @@ export default function FloatingSummaryBot() {
                     : 'w-80 sm:w-[440px] rounded-2xl slide-in-from-bottom-5'
             }`}>
                 {/* Header */}
-                <div className="bg-[#0e75c6] text-white px-5 py-4 flex items-center justify-between shrink-0">
+                <div className="bg-[#1c7a3c] text-white px-5 py-4 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         {view !== 'menu' && (
                             <button onClick={() => setView('menu')} className="text-[#7ec8f7] hover:text-white transition-colors p-1 -ml-2 rounded-full hover:bg-white/10">
@@ -151,7 +151,7 @@ export default function FloatingSummaryBot() {
                                 key={opt.value}
                                 onClick={() => setTimeRange(opt.value)}
                                 className={`px-2 py-1 text-[10px] font-bold tracking-wide transition-colors
-                                    ${timeRange === opt.value ? 'bg-[#0e75c6] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                                    ${timeRange === opt.value ? 'bg-[#1c7a3c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
                             >
                                 {opt.label}
                             </button>
@@ -175,7 +175,7 @@ export default function FloatingSummaryBot() {
 
                             <button
                                 onClick={() => setView('issues')}
-                                className="bg-white border border-gray-200 rounded-xl p-5 text-left hover:border-[#0e75c6] hover:shadow-md transition-all flex items-center justify-between group"
+                                className="bg-white border border-gray-200 rounded-xl p-5 text-left hover:border-[#1c7a3c] hover:shadow-md transition-all flex items-center justify-between group"
                             >
                                 <div>
                                     <h4 className="font-semibold text-gray-900 text-sm mb-1">Summary for issues</h4>
@@ -185,7 +185,7 @@ export default function FloatingSummaryBot() {
 
                             <button
                                 onClick={() => setView('suggestions')}
-                                className="bg-white border border-gray-200 rounded-xl p-5 text-left hover:border-[#0e75c6] hover:shadow-md transition-all flex items-center justify-between group"
+                                className="bg-white border border-gray-200 rounded-xl p-5 text-left hover:border-[#1c7a3c] hover:shadow-md transition-all flex items-center justify-between group"
                             >
                                 <div>
                                     <h4 className="font-semibold text-gray-900 text-sm mb-1">Summary for suggestions</h4>

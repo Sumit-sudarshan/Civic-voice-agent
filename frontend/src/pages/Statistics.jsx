@@ -160,7 +160,7 @@ export default function Statistics() {
                 onClick={() => setTimeRange(opt.value)}
                 className={`px-3 py-1.5 text-[10px] font-bold tracking-wide transition-colors
                   ${timeRange === opt.value
-                    ? 'bg-[#0e75c6] text-white'
+                    ? 'bg-[#1c7a3c] text-white'
                     : 'text-gray-600 hover:bg-gray-50'
                   }`}
               >
@@ -170,7 +170,7 @@ export default function Statistics() {
           </div>
           <button
             onClick={load}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-[10px] text-[#0e75c6] hover:bg-[#e8f4ff] transition-colors font-medium"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-[10px] text-[#1c7a3c] hover:bg-[#eaf7ec] transition-colors font-medium"
           >
             <RefreshCw className="w-3 h-3" />
             Refresh
@@ -185,7 +185,7 @@ export default function Statistics() {
           value={stats?.total_issues ?? '…'}
           sub={`${stats?.open ?? 0} open · ${stats?.resolved ?? 0} resolved`}
           icon={Layers}
-          colorClass="bg-blue-50 text-blue-600"
+          colorClass="bg-green-50 text-green-600"
         />
         <KpiCard
           label="Suggestions"

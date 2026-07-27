@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, MessageSquareText } from 'lucide-react';
+import { Home, MessageSquareText, AlertTriangle } from 'lucide-react';
 import { login } from '../api/auth';
 
 export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToLeaderLogin }) {
@@ -80,7 +80,12 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
               />
             </div>
 
-            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+            {error && (
+              <div className="flex items-start gap-2 p-2.5 rounded border bg-red-50 border-red-200">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                <p className="text-xs text-red-700">{error}</p>
+              </div>
+            )}
 
             <div className="flex items-center justify-center pt-2">
               <button type="submit" disabled={submitting}

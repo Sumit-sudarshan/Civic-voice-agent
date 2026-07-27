@@ -3,7 +3,7 @@ import { Home, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { leaderSignup } from '../api/auth';
 
 const initialForm = {
-  name: '', email: '', phone: '', city: '', pincode: '',
+  firstName: '', lastName: '', email: '', phone: '', city: '', pincode: '',
   password: '', confirmPassword: '',
 };
 
@@ -31,7 +31,8 @@ export default function LeaderSignupPage({ onGoToLogin }) {
     setSubmitting(true);
     try {
       await leaderSignup({
-        name: form.name, phone: form.phone, email: form.email,
+        firstName: form.firstName, lastName: form.lastName || null,
+        phone: form.phone, email: form.email,
         password: form.password, city: form.city, pincode: form.pincode,
       });
       setDone(true);
@@ -75,7 +76,7 @@ export default function LeaderSignupPage({ onGoToLogin }) {
               <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
               <p className="font-bold text-black text-sm mb-1">Registration Submitted</p>
               <p className="text-xs text-gray-600 mb-5">
-                Welcome, <strong>{form.name}</strong>. Check your email to confirm your account, then log in to
+                Welcome, <strong>{[form.firstName, form.lastName].filter(Boolean).join(' ')}</strong>. Check your email to confirm your account, then log in to
                 view complaints raised in your jurisdiction ({form.city}, {form.pincode}).
               </p>
               <button
@@ -107,8 +108,13 @@ export default function LeaderSignupPage({ onGoToLogin }) {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <label className={labelCls}>NAME: <span className="text-red-500">*</span></label>
-                  <input required name="name" value={form.name} onChange={handleChange} placeholder="Full Name" className={inputCls} />
+                  <label className={labelCls}>FIRST NAME: <span className="text-red-500">*</span></label>
+                  <input required name="firstName" value={form.firstName} onChange={handleChange} placeholder="First Name" className={inputCls} />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className={labelCls}>LAST NAME:</label>
+                  <input name="lastName" value={form.lastName} onChange={handleChange} placeholder="Last Name (optional)" className={inputCls} />
                 </div>
 
                 <div className="flex items-center gap-3">

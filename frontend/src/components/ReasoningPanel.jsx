@@ -37,7 +37,7 @@ function PhoneNumber({ complaintId, maskedPhone }) {
           }
         }}
         disabled={loading}
-        className="text-[#0e75c6] hover:underline text-[10px] font-semibold disabled:opacity-50"
+        className="text-[#1c7a3c] hover:underline text-[10px] font-semibold disabled:opacity-50"
       >
         {loading ? 'Revealing…' : 'Reveal'}
       </button>
@@ -56,7 +56,7 @@ export default function ReasoningPanel({ issue }) {
             "{issue.raw_text}"
           </p>
           <div className="mt-3 text-[10px] text-gray-500 flex items-center gap-1 flex-wrap">
-            Reported by: <span className="font-medium text-gray-900">{issue.citizen_name} {issue.citizen_last_name}</span> • Phone: <PhoneNumber complaintId={issue.id} maskedPhone={issue.citizen_phone} />
+            Reported by: <span className="font-medium text-gray-900">{[issue.citizen_name, issue.citizen_last_name].filter(Boolean).join(' ')}</span> • Phone: <PhoneNumber complaintId={issue.id} maskedPhone={issue.citizen_phone} />
           </div>
         </div>
         

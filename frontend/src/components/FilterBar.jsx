@@ -31,7 +31,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
           <SlidersHorizontal className="w-4 h-4" />
-          Filters {activeCount > 0 && <span className="bg-[#0e75c6] text-white rounded-full px-2 py-0.5 text-xs">{activeCount}</span>}
+          Filters {activeCount > 0 && <span className="bg-[#1c7a3c] text-white rounded-full px-2 py-0.5 text-xs">{activeCount}</span>}
         </div>
         {activeCount > 0 && (
           <button onClick={onClear} className="text-gray-400 hover:text-black transition-colors flex items-center gap-1 text-xs">
@@ -46,7 +46,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
           <select
             value={filters.category || ''}
             onChange={(e) => onChange('category', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#1c7a3c] focus:ring-1 focus:ring-[#1c7a3c]"
           >
             <option value="">All</option>
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -59,7 +59,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
             <select
               value={filters.urgency || ''}
               onChange={(e) => onChange('urgency', e.target.value)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#1c7a3c] focus:ring-1 focus:ring-[#1c7a3c]"
             >
               <option value="">All</option>
               {URGENCY_LEVELS.map(u => <option key={u} value={u}>{u}</option>)}
@@ -72,7 +72,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
           <select
             value={filters.status || ''}
             onChange={(e) => onChange('status', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs capitalize focus:outline-none focus:border-[#1c7a3c] focus:ring-1 focus:ring-[#1c7a3c]"
           >
             <option value="">All</option>
             {STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
@@ -86,7 +86,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
             value={filters.area || ''}
             onChange={(e) => onChange('area', e.target.value)}
             placeholder="e.g. Cotton Green"
-            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#1c7a3c] focus:ring-1 focus:ring-[#1c7a3c]"
           />
         </div>
 
@@ -95,7 +95,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, showUrgency
           <select
             value={filters.timeRange || ''}
             onChange={(e) => onChange('timeRange', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#0e75c6] focus:ring-1 focus:ring-[#0e75c6]"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-xs focus:outline-none focus:border-[#1c7a3c] focus:ring-1 focus:ring-[#1c7a3c]"
           >
             <option value="">All time</option>
             {TIME_RANGES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}

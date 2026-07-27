@@ -27,10 +27,10 @@ export function citizenSignup({ firstName, lastName, phone, email, password }) {
   });
 }
 
-export function leaderSignup({ name, phone, email, password, city, pincode }) {
+export function leaderSignup({ firstName, lastName, phone, email, password, city, pincode }) {
   return authFetch('/auth/leader/signup', {
     method: 'POST',
-    body: JSON.stringify({ name, phone, email, password, city, pincode }),
+    body: JSON.stringify({ first_name: firstName, last_name: lastName || null, phone, email, password, city, pincode }),
   });
 }
 

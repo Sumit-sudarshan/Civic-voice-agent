@@ -18,8 +18,8 @@ export default function Settings() {
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#e8f4ff] rounded-md flex items-center justify-center border border-blue-100">
-            <SettingsIcon className="w-4 h-4 text-[#0e75c6]" />
+          <div className="w-8 h-8 bg-[#eaf7ec] rounded-md flex items-center justify-center border border-green-100">
+            <SettingsIcon className="w-4 h-4 text-[#1c7a3c]" />
           </div>
           <div>
             <h3 className="text-sm font-semibold text-black">Complaint Categories</h3>

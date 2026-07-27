@@ -57,6 +57,7 @@ class CurrentUser:
     role: str  # "citizen" | "leader" — a UX hint from signup, not an authorization boundary
     first_name: Optional[str]
     last_name: Optional[str]
+    name: Optional[str]  # leader signup's single NAME field — citizens have first_name/last_name instead
     phone: Optional[str]
 
 
@@ -76,6 +77,7 @@ def get_current_user(request: Request) -> CurrentUser:
         role=meta.get("role", "citizen"),
         first_name=meta.get("first_name"),
         last_name=meta.get("last_name"),
+        name=meta.get("name"),
         phone=meta.get("phone"),
     )
 

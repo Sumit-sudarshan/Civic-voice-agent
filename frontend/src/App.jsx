@@ -1,4 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import LandingPage from './components/LandingPage';
 import LeaderLandingPage from './components/LeaderLandingPage';
@@ -26,6 +27,28 @@ const PageFallback = () => (
   <div className="h-full flex items-center justify-center text-sm text-gray-500">Loading…</div>
 );
 
+// Supabase's email-confirmation link is verified entirely on Supabase's own
+// server — it never touches our backend. Once confirmed, Supabase redirects
+// the browser straight back to the app's root URL with the resulting session
+// appended as a URL *fragment* (`#access_token=...&type=signup`), not a query
+// string or a backend callback. Nothing previously read that fragment, so a
+// leader confirming their email just silently landed on the citizen landing
+// page with a live token sitting unused (and exposed) in the address bar.
+//
+// This only decodes the token to read `user_metadata.role` for routing —
+// picking which portal's login screen to show — it is NOT treated as proof
+// of identity; the user still has to log in with real credentials afterward.
+function decodeSupabaseRole(accessToken) {
+  try {
+    let payload = accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (payload.length % 4) payload += '=';
+    const claims = JSON.parse(atob(payload));
+    return claims?.user_metadata?.role === 'leader' ? 'leader' : 'citizen';
+  } catch {
+    return 'citizen';
+  }
+}
+
 function App() {
   const [currentPath, setCurrentPath] = useState('home');
   const [isDashboard, setIsDashboard] = useState(false);
@@ -36,6 +59,7 @@ function App() {
   const [user, setUser] = useState(null); // null = logged out; else {id,email,role,first_name,last_name,phone}
   const [citizenView, setCitizenView] = useState('landing'); // 'landing' | 'login' | 'signup'
   const [leaderView, setLeaderView] = useState('landing'); // 'landing' | 'login' | 'signup'
+  const [confirmedRole, setConfirmedRole] = useState(null); // set when this load is a Supabase signup-confirmation redirect
 
   useEffect(() => {
     if (window.location.pathname.startsWith('/dashboard')) {
@@ -45,6 +69,18 @@ function App() {
     } else {
       setIsDashboard(false);
     }
+
+    const hash = window.location.hash;
+    if (hash.includes('access_token') && hash.includes('type=signup')) {
+      const params = new URLSearchParams(hash.slice(1));
+      const role = decodeSupabaseRole(params.get('access_token') || '');
+      // The token is a live credential — strip it from the address bar/history
+      // immediately rather than leaving it sitting there after we've read it.
+      window.history.replaceState({}, '', window.location.pathname || '/');
+      setConfirmedRole(role);
+      if (role === 'leader') setLeaderView('login'); else setCitizenView('login');
+    }
+
     getMe().then(setUser).catch(() => setUser(null)).finally(() => setAuthLoading(false));
   }, []);
 
@@ -53,6 +89,46 @@ function App() {
   // after all hooks above so hook call order stays unconditional per render.
   if (window.location.pathname.startsWith('/internal-eval')) {
     return <Suspense fallback={<PageFallback />}><EvalConsole /></Suspense>;
+  }
+
+  // Just arrived here via a Supabase email-confirmation redirect — show a
+  // clear confirmation instead of silently falling through to the citizen
+  // landing page with an unused token in the address bar (see
+  // decodeSupabaseRole's comment above for why that fragment exists at all).
+  if (confirmedRole) {
+    const isLeader = confirmedRole === 'leader';
+    return (
+      <div className={`h-screen flex items-center justify-center font-sans px-4 ${isLeader ? 'bg-[#eef6ee]' : 'bg-[#ebf5fb]'}`}>
+        <div className="bg-white rounded-xl shadow-md w-full max-w-md px-8 py-10 text-center">
+          <div className={`h-14 w-14 rounded-full mx-auto mb-4 flex items-center justify-center ${isLeader ? 'bg-[#1c7a3c]' : 'bg-[#0e75c6]'}`}>
+            <CheckCircle2 className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-black mb-2">Email confirmed</h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Your {isLeader ? 'leader' : 'citizen'} account is now active. Please log in to continue.
+          </p>
+          <button
+            onClick={() => {
+              setConfirmedRole(null);
+              if (isLeader) {
+                setLeaderView('login');
+                setIsDashboard(true);
+                window.history.pushState({}, '', '/dashboard');
+              } else {
+                setCitizenView('login');
+                setIsDashboard(false);
+                window.history.pushState({}, '', '/');
+              }
+            }}
+            className={`px-6 py-2 rounded font-semibold text-sm text-white transition-colors ${
+              isLeader ? 'bg-[#1c7a3c] hover:bg-[#155c2d]' : 'bg-[#0e75c6] hover:bg-[#054483]'
+            }`}
+          >
+            Go to {isLeader ? 'Leader' : 'Citizen'} Login
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Update URL without full reload when navigating within dashboard
@@ -101,7 +177,7 @@ function App() {
               <Sidebar
                 active={currentPath}
                 setActive={handleNavigate}
-                leaderName={user.leader?.name || user.first_name}
+                leaderName={user.leader?.name || user.first_name || user.name}
                 onLogout={handleLogout}
               />
               <main className="flex-1 overflow-y-auto relative z-10 w-full bg-[#fafafa]">

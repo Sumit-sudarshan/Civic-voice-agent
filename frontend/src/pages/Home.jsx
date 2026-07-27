@@ -107,21 +107,29 @@ export default function Home({ leaderName }) {
   const sentinelRef = useRef(null);
 
   // ── Load stat cards ──
-  const loadStats = useCallback(() => {
-    setLoadingStats(true);
+  // `background: true` (used by the 10s poll below) skips the loading flag —
+  // StatCard/IssueRow read `loadingStats`/`loadingTop` to decide whether to
+  // show their skeleton placeholders, so leaving it untouched on a poll means
+  // the numbers/rows just update in place once fresh data arrives, instead of
+  // the whole dashboard flashing back to a loading skeleton every 10 seconds
+  // even though nothing forced a real reload.
+  const loadStats = useCallback((opts = {}) => {
+    const { background = false } = opts;
+    if (!background) setLoadingStats(true);
     fetchStatsSummary()
       .then(data => { if (data) setStats(data); })
       .catch(console.error)
-      .finally(() => setLoadingStats(false));
+      .finally(() => { if (!background) setLoadingStats(false); });
   }, []);
 
   // ── Load ALL issues, sorted by most recent first (no top-N cap) ──
-  const loadTopIssues = useCallback((fetchArchived = false, timeRange = '') => {
-    setLoadingTop(true);
+  const loadTopIssues = useCallback((fetchArchived = false, timeRange = '', opts = {}) => {
+    const { background = false } = opts;
+    if (!background) setLoadingTop(true);
     fetchIssues({ submissionType: 'complaint', archived: fetchArchived, timeRange })
       .then(data => setTopData(data))
       .catch(console.error)
-      .finally(() => setLoadingTop(false));
+      .finally(() => { if (!background) setLoadingTop(false); });
   }, []);
 
   // Re-run on mount or cache invalidation
@@ -133,11 +141,12 @@ export default function Home({ leaderName }) {
     loadTopIssues(filters.status === 'resolved', filters.timeRange);
   }, [loadTopIssues, refreshToken, filters.status, filters.timeRange]);
 
-  // FR10: poll every 10s so new/updated complaints appear without a manual refresh.
+  // FR10: poll every 10s so new/updated complaints appear without a manual
+  // refresh — quietly, in the background, not as a visible reload.
   useEffect(() => {
     const id = setInterval(() => {
-      loadStats();
-      loadTopIssues(filters.status === 'resolved', filters.timeRange);
+      loadStats({ background: true });
+      loadTopIssues(filters.status === 'resolved', filters.timeRange, { background: true });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [loadStats, loadTopIssues, filters.status, filters.timeRange]);
@@ -197,7 +206,7 @@ export default function Home({ leaderName }) {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 mb-5">
         <StatCard title="Total" value={loadingStats ? undefined : stats.total_issues} icon={Layers} colorClass="bg-gray-100 text-gray-700" />
         <StatCard title="Critical" value={loadingStats ? undefined : stats.critical} icon={AlertCircle} colorClass="bg-red-50 text-red-600" />
-        <StatCard title="Open" value={loadingStats ? undefined : stats.open} icon={MessageSquare} colorClass="bg-[#e8f4ff] text-[#0e75c6]" />
+        <StatCard title="Open" value={loadingStats ? undefined : stats.open} icon={MessageSquare} colorClass="bg-[#eaf7ec] text-[#1c7a3c]" />
         <StatCard title="Resolved" value={loadingStats ? undefined : stats.resolved} icon={CheckCircle2} colorClass="bg-green-50 text-green-600" />
         <StatCard title="Suggestions" value={loadingStats ? undefined : stats.suggestions} icon={Lightbulb} colorClass="bg-orange-50 text-orange-600" />
       </div>
@@ -217,7 +226,7 @@ export default function Home({ leaderName }) {
         <button
           onClick={() => setShowFilters(!showFilters)}
           className={`px-5 py-2.5 border rounded-xl shadow-sm text-sm font-medium transition-colors ${showFilters || activeFilterCount > 0
-              ? 'bg-[#0e75c6] text-white border-[#0e75c6]'
+              ? 'bg-[#1c7a3c] text-white border-[#1c7a3c]'
               : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
             }`}
         >

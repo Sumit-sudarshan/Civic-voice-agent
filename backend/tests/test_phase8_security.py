@@ -77,7 +77,7 @@ def test_get_current_leader_matches_only_the_verified_auth_user():
         session.refresh(leader_b)
 
         current_user = CurrentUser(id=user_a_auth_id, email="a@example.com", role="leader",
-                                    first_name="A", last_name=None, phone=None)
+                                    first_name="A", last_name=None, name=None, phone=None)
         resolved = get_current_leader(current_user=current_user, session=session)
         assert resolved.id == leader_a.id
         assert resolved.id != leader_b.id
@@ -90,7 +90,7 @@ def test_get_current_leader_rejects_auth_user_with_no_leader_row():
     from fastapi import HTTPException
     with Session(engine) as session:
         current_user = CurrentUser(id=uuid.uuid4(), email="citizen@example.com", role="citizen",
-                                    first_name="C", last_name=None, phone=None)
+                                    first_name="C", last_name=None, name=None, phone=None)
         with pytest.raises(HTTPException) as exc_info:
             get_current_leader(current_user=current_user, session=session)
         assert exc_info.value.status_code == 403

@@ -27,7 +27,7 @@ def get_current_user_override():
     return CurrentUser(
         id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
         email="test-citizen@example.com", role="citizen",
-        first_name="Test", last_name="User", phone="123",
+        first_name="Test", last_name="User", name=None, phone="123",
     )
 
 TEST_LEADER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000ff")
