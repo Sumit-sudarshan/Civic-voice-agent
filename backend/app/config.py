@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     SUPABASE_URL: str = "https://lygnuqonfnedkrinlcqo.supabase.co"
 
+    # --- reCAPTCHA Enterprise (abuse protection, MVP_Design.md §3.1/§5) ---
+    # Score-based (v3-equivalent) web key, created via `gcloud recaptcha keys
+    # create`; verified server-side via the Assessment API, restricted to the
+    # recaptchaenterprise API via `gcloud services api-keys create`. Empty
+    # RECAPTCHA_API_KEY means local dev/CI without the secret configured —
+    # verification is skipped (logged) rather than blocking signup/login.
+    RECAPTCHA_SITE_KEY: str = ""
+    RECAPTCHA_API_KEY: str = ""
+    RECAPTCHA_PROJECT_ID: str = "civic-voice-agent"
+    RECAPTCHA_MIN_SCORE: float = 0.5
+
     # --- CORS ---
     # Comma-separated list of allowed origins. "*" (dev default) allows any
     # origin; set to the deployed frontend's exact origin(s) in production.

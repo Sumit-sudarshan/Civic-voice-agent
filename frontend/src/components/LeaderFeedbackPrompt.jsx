@@ -1,13 +1,24 @@
 import React, { useState } from 'react';
 import { ThumbsUp, ThumbsDown, Sparkles, Check, X } from 'lucide-react';
 import { sendExtractionFeedback } from '../api/client';
-import { pickLeaderFeedbackAspect, buildQuestion, hasAnsweredLeaderFeedback, markLeaderFeedbackAnswered } from '../api/leaderFeedback';
+import {
+  pickLeaderFeedbackAspect, buildQuestion, hasAnsweredLeaderFeedback,
+  markLeaderFeedbackAnswered, ASPECT_FIELDS,
+} from '../api/leaderFeedback';
+
+const CATEGORY_OPTIONS = ['roads', 'water', 'electricity', 'sanitation', 'education', 'healthcare', 'safety', 'other'];
+const URGENCY_OPTIONS = ['critical', 'high', 'medium', 'low'];
 
 // A spot-check shown to the leader inside an expanded issue, asking ONE
-// rotating question (labelling / summary / affected+ask). Shows reliably every
-// time an eligible issue is expanded, and disappears for good once the leader
-// answers or dismisses it for that complaint — same persisted-once-answered
-// pattern as the citizen-side ExtractionFeedbackCard.
+// rotating question (labelling / summary / affected+ask / location). Shows
+// reliably every time an eligible issue is expanded, and disappears for
+// good once the leader answers or dismisses it for that complaint — same
+// persisted-once-answered pattern as the citizen-side ExtractionFeedbackCard.
+//
+// A "No" answer now applies directly to the live Complaint row (via
+// api/complaints.py's submit_extraction_feedback + its _CORRECTABLE_FIELDS
+// allowlist), not just a logged note — the per-aspect ASPECT_FIELDS map
+// decides which structured field(s) the leader can correct for that aspect.
 export default function LeaderFeedbackPrompt({ issue }) {
   const eligible = issue?.pipeline_status === 'done'
     && issue?.is_valid_submission === true
@@ -18,18 +29,31 @@ export default function LeaderFeedbackPrompt({ issue }) {
   const [aspect] = useState(() => (eligible ? pickLeaderFeedbackAspect() : null));
   const [phase, setPhase] = useState('ask'); // 'ask' | 'note' | 'done' | 'dismissed'
   const [note, setNote] = useState('');
+  const [values, setValues] = useState({}); // { field_key: corrected_value }
   const [submitting, setSubmitting] = useState(false);
 
   if (!aspect || phase === 'dismissed') return null;
 
+  const fields = (ASPECT_FIELDS[aspect] || []).filter(
+    (f) => !f.complaintOnly || issue.submission_type === 'complaint'
+  );
+
   const submit = async (isCorrect) => {
     setSubmitting(true);
+    const corrections = {};
+    if (!isCorrect) {
+      for (const f of fields) {
+        const v = (values[f.key] || '').trim();
+        if (v) corrections[f.key] = v;
+      }
+    }
     try {
       await sendExtractionFeedback(issue.id, {
         is_correct: isCorrect,
         correction: isCorrect ? null : (note.trim() || null),
         source: 'leader',
         aspect,
+        corrections: Object.keys(corrections).length ? corrections : undefined,
       });
     } catch { /* don't trap the leader on a failed POST */ }
     finally {
@@ -84,12 +108,44 @@ export default function LeaderFeedbackPrompt({ issue }) {
           </button>
         </div>
       ) : (
-        <div className="mt-2 pl-5">
+        <div className="mt-2 pl-5 space-y-1.5">
+          {fields.map((f) => (
+            f.key === 'category' ? (
+              <select
+                key={f.key}
+                value={values[f.key] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white capitalize focus:outline-none focus:ring-2 focus:ring-black/5"
+              >
+                <option value="">{f.label}</option>
+                {CATEGORY_OPTIONS.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}
+              </select>
+            ) : f.key === 'urgency_level' ? (
+              <select
+                key={f.key}
+                value={values[f.key] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white capitalize focus:outline-none focus:ring-2 focus:ring-black/5"
+              >
+                <option value="">{f.label}</option>
+                {URGENCY_OPTIONS.map((u) => <option key={u} value={u} className="capitalize">{u}</option>)}
+              </select>
+            ) : (
+              <input
+                key={f.key}
+                type="text"
+                value={values[f.key] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                placeholder={f.label}
+                className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black/5"
+              />
+            )
+          ))}
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="What should it have been? (optional)"
+            placeholder="Anything else to add? (optional)"
             className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black/5"
           />
           <div className="flex gap-2 mt-1.5">

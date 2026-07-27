@@ -9,11 +9,19 @@ class ExtractionFeedbackIn(BaseModel):
     """Human 'did the agent get this right?' answer. Posted by the citizen after
     the pipeline finishes (source defaults to 'citizen', aspect 'overall'), or by
     the leader as an occasional facet spot-check (source='leader', aspect one of
-    'labelling'/'summary'/'affected_and_ask'). correction is optional free text."""
+    'labelling'/'summary'/'affected_and_ask'/'location'). `correction` is an
+    optional free-text note, kept for the eval harness's "evolving ground truth"
+    use case unchanged. `corrections` is the NEW, structured half: an explicit
+    {field_name: corrected_value} map that api/complaints.py actually applies to
+    the live Complaint row when is_correct=False — the previous design only ever
+    stored `correction` as unstructured prose no code ever read back. Only
+    consulted when is_correct is False; field names are validated server-side
+    against a fixed allowlist (never arbitrary attribute names from the client)."""
     is_correct: bool
     correction: Optional[str] = None
     source: str = "citizen"
     aspect: Optional[str] = None
+    corrections: Optional[dict[str, str]] = None
 
 
 class ComplaintOut(BaseModel):
@@ -42,6 +50,7 @@ class ComplaintOut(BaseModel):
     is_valid_submission: Optional[bool] = None
     needs_human_review: Optional[bool] = None
     review_reason: Optional[str] = None
+    human_corrected_fields: Optional[str] = None
 
     duplicate_of: Optional[uuid.UUID] = None
     report_count: int
@@ -87,6 +96,16 @@ class ChatMessageRequest(BaseModel):
     # Editable per conversation, so resent (possibly changed) every turn;
     # whatever it is on the turn that actually creates the Complaint row wins.
     concerned_leader_id: Optional[uuid.UUID] = None
+    # The same city/pincode the FR9 dropdown was filtered by. Previously used
+    # client-side only (to narrow the leader list) and never sent here — so
+    # the conversation would go on to ask for the pincode a second time, mid-
+    # chat, even though the citizen had already typed it above the thread.
+    # Deliberately unvalidated (no field_validator): this is a best-effort
+    # hint from an optional field the citizen may leave blank or partially
+    # typed, not a required input — orchestrator.py checks it looks like a
+    # real 6-digit pincode before ever treating it as authoritative.
+    citizen_city: Optional[str] = None
+    citizen_pincode: Optional[str] = None
 
     _validate_phone = field_validator("citizen_phone")(validate_phone)
 

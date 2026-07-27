@@ -1,3 +1,5 @@
+import { getRecaptchaToken } from './recaptcha';
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 async function authFetch(path, options = {}) {
@@ -20,22 +22,25 @@ async function authFetch(path, options = {}) {
   return res.json();
 }
 
-export function citizenSignup({ firstName, lastName, phone, email, password }) {
+export async function citizenSignup({ firstName, lastName, phone, email, password }) {
+  const recaptcha_token = await getRecaptchaToken('signup');
   return authFetch('/auth/citizen/signup', {
     method: 'POST',
-    body: JSON.stringify({ first_name: firstName, last_name: lastName || null, phone, email, password }),
+    body: JSON.stringify({ first_name: firstName, last_name: lastName || null, phone, email, password, recaptcha_token }),
   });
 }
 
-export function leaderSignup({ firstName, lastName, phone, email, password, city, pincode }) {
+export async function leaderSignup({ firstName, lastName, phone, email, password, city, pincode }) {
+  const recaptcha_token = await getRecaptchaToken('signup');
   return authFetch('/auth/leader/signup', {
     method: 'POST',
-    body: JSON.stringify({ first_name: firstName, last_name: lastName || null, phone, email, password, city, pincode }),
+    body: JSON.stringify({ first_name: firstName, last_name: lastName || null, phone, email, password, city, pincode, recaptcha_token }),
   });
 }
 
-export function login({ email, password }) {
-  return authFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+export async function login({ email, password }) {
+  const recaptcha_token = await getRecaptchaToken('login');
+  return authFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, recaptcha_token }) });
 }
 
 export function logout() {

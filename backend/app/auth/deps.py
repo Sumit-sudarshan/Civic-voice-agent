@@ -104,3 +104,20 @@ def get_current_leader(
     if not leader:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a leader account")
     return leader
+
+
+def get_optional_current_leader(
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+    session: Session = Depends(get_session),
+) -> Optional[Leader]:
+    """
+    Used by routes reachable both by an anonymous/citizen caller AND by a
+    logged-in leader (e.g. POST /complaints/{id}/feedback), where a real
+    leader session — if present — should carry more authority (their
+    corrections write directly to the record) than an anonymous one. Never
+    raises: no cookie or an invalid/expired one both resolve to None, same
+    as an unauthenticated citizen request.
+    """
+    if current_user is None:
+        return None
+    return session.exec(select(Leader).where(Leader.auth_user_id == current_user.id)).first()

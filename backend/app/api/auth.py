@@ -11,6 +11,7 @@ from app.config import settings
 from app.db.session import get_session
 from app.models.db_models import Leader
 from app.auth.deps import CurrentUser, get_current_user, is_https_request, SESSION_COOKIE
+from app.auth.recaptcha import verify_recaptcha
 from app.utils.validators import validate_phone, validate_pincode
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,10 @@ class CitizenSignupRequest(BaseModel):
     phone: str
     email: EmailStr
     password: str
+    # Empty default so pre-existing tests/dev flows that don't send this
+    # don't 422 — verify_recaptcha() itself skips (fails open) when
+    # RECAPTCHA_API_KEY isn't configured, so an empty token is a no-op there.
+    recaptcha_token: str = ""
 
     _validate_phone = field_validator("phone")(validate_phone)
 
@@ -49,6 +54,7 @@ class LeaderSignupRequest(BaseModel):
     password: str
     city: str
     pincode: str
+    recaptcha_token: str = ""
 
     _validate_phone = field_validator("phone")(validate_phone)
     _validate_pincode = field_validator("pincode")(validate_pincode)
@@ -57,6 +63,7 @@ class LeaderSignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    recaptcha_token: str = ""
 
 
 def _signup_message(body: dict) -> str:
@@ -124,6 +131,8 @@ def _supabase_error_detail(resp: httpx.Response) -> str:
 
 @router.post("/citizen/signup", status_code=201)
 def citizen_signup(payload: CitizenSignupRequest):
+    if not verify_recaptcha(payload.recaptcha_token, "signup"):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed. Please try again.")
     body = {
         "email": payload.email,
         "password": payload.password,
@@ -142,6 +151,8 @@ def citizen_signup(payload: CitizenSignupRequest):
 
 @router.post("/leader/signup", status_code=201)
 def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_session)):
+    if not verify_recaptcha(payload.recaptcha_token, "signup"):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed. Please try again.")
     full_name = " ".join(p for p in (payload.first_name, payload.last_name) if p).strip()
     body = {
         "email": payload.email,
@@ -186,6 +197,8 @@ def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_s
 
 @router.post("/login")
 def login(payload: LoginRequest, request: Request, response: Response, session: Session = Depends(get_session)):
+    if not verify_recaptcha(payload.recaptcha_token, "login"):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed. Please try again.")
     resp = httpx.post(
         f"{_SUPABASE_AUTH_URL}/token?grant_type=password",
         headers=_AUTH_HEADERS,

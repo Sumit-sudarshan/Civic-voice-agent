@@ -232,14 +232,16 @@ def _pinned_model() -> Optional[str]:
     return current if current and current != _DEFAULT_LLM_MODEL else None
 
 def call_llm(system_prompt: str, user_prompt: str, response_model: Type[T], mode: str = "sync",
-             stage: str = "unknown") -> Optional[T]:
+             stage: str = "unknown", temperature: float = 0.1) -> Optional[T]:
     """
     Thin wrapper to call the configured LLM backend and return a validated
     Pydantic model. Delegates to parser for retry logic. `mode` selects the
     timeout/retry budget (NFR7/NFR8): "sync" for the citizen-facing
     conversational loop, "async" for the background finalize pipeline.
     `stage` (FR14) tags the cost/token log for this call — e.g. "classify",
-    "urgency" — so per-call cost is queryable by pipeline stage.
+    "urgency" — so per-call cost is queryable by pipeline stage. `temperature`
+    passes straight through to parse_with_retries — see its docstring for why
+    the reply-composer stages override the 0.1 default.
     """
     if mode == "async":
         chain, retries, backoff = async_providers, settings.ASYNC_LLM_RETRIES, settings.ASYNC_LLM_BACKOFF_S
@@ -266,6 +268,7 @@ def call_llm(system_prompt: str, user_prompt: str, response_model: Type[T], mode
             backoff_schedule=backoff,
             stage=stage,
             on_call_error=_on_call_error,
+            temperature=temperature,
         )
         if result is not None:
             return result
@@ -289,7 +292,12 @@ def stream_llm_text(system_prompt: str, user_prompt: str, stage: str = "unknown"
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    options = {"temperature": 0.4}
+    # Higher than the structured-judgment stages' 0.1 (see parser.py) — this
+    # is free-form conversational text, where some randomness is the point,
+    # not a risk. 0.4 was still low enough that a small/free model tended to
+    # fall back on the prompt's single few-shot example almost verbatim
+    # rather than generating fresh phrasing (see compose_reply_stream.py).
+    options = {"temperature": 0.65}
 
     pinned = _pinned_model()
     providers = [sync_providers[0]] if pinned else _usable_providers(sync_providers)

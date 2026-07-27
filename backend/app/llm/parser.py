@@ -46,7 +46,7 @@ def _build_simple_schema_hint(response_model: Type[T]) -> str:
 def parse_with_retries(
     client, model: str, system_prompt: str, user_prompt: str, response_model: Type[T],
     max_retries: int = 2, backoff_schedule: Optional[list] = None, stage: str = "unknown",
-    on_call_error=None,
+    on_call_error=None, temperature: float = 0.1,
 ) -> Optional[T]:
     """
     Calls the LLM, attempts to parse as response_model.
@@ -69,6 +69,13 @@ def parse_with_retries(
     (plus its backoff sleeps) against a quota that will not reset in a few
     seconds. Validation errors deliberately do NOT consult it: malformed
     JSON is a prompting problem the retry can actually fix.
+
+    `temperature` defaults to 0.1 — right for the structured-judgment stages
+    (gatekeeper/classify/urgency/extract/dialogue), where the model must stay
+    on-task and never improvise a field that isn't in the text. The reply
+    composer stages pass a higher value (see stages.py) since that low a
+    temperature actively fights the opposite goal: sounding like a person
+    varying their phrasing, not a form repeating the same sentence.
     """
     if backoff_schedule is None:
         backoff_schedule = [1.0, 3.0]
@@ -79,12 +86,10 @@ def parse_with_retries(
     current_user_prompt = user_prompt
 
     # Ollama tuning options — keep model hot across pipeline calls, limit context.
-    # Low temperature keeps this small model on-task for structured extraction
-    # instead of improvising fields that aren't in the text.
     ollama_options = {
         "num_thread": settings.OLLAMA_NUM_THREAD,
         "num_ctx": settings.OLLAMA_NUM_CTX,
-        "temperature": 0.1,
+        "temperature": temperature,
     }
 
     total_attempts = max_retries + 1

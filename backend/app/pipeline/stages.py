@@ -62,12 +62,17 @@ def run_dialogue_manager(transcript_blob: str) -> DialogueState | None:
     )
 
 def run_reply_composer(transcript_blob: str, need: str, language_name: str) -> ComposedReply | None:
+    # temperature=0.65 (not the 0.1 other stages use): this is free-form
+    # conversational phrasing, not a structured judgment — a low temperature
+    # here just made a small/free model default to the prompt's few-shot
+    # example almost verbatim instead of varying its wording turn to turn.
     return call_llm(
         system_prompt=COMPOSE_REPLY_SYSTEM_PROMPT,
         user_prompt=build_compose_reply_user_prompt(transcript_blob, need, language_name),
         response_model=ComposedReply,
         mode="sync",
         stage="compose_reply",
+        temperature=0.65,
     )
 
 def stream_reply_composer(transcript_blob: str, need: str) -> Iterator[str]:

@@ -91,6 +91,11 @@ class Complaint(SQLModel, table=True):
     is_valid_submission: Optional[bool] = None
     needs_human_review: Optional[bool] = None
     review_reason: Optional[str] = None
+    # Comma-separated list of field names a citizen or leader has directly
+    # corrected via the feedback loop (see api/complaints.py's
+    # submit_extraction_feedback) — distinct from needs_human_review, which
+    # means "an AI pipeline stage failed", not "a human already fixed this".
+    human_corrected_fields: Optional[str] = None
 
     duplicate_of: Optional[uuid.UUID] = Field(default=None, foreign_key="complaint.id")
     report_count: int = Field(default=1)

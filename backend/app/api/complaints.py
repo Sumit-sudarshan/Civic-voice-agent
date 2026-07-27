@@ -1,16 +1,62 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 import uuid
 
 from app.db.session import get_session
 from app.models.schemas import ComplaintOut, ExtractionFeedbackIn
 from app.models.db_models import Complaint, ExtractionFeedback, Leader, PhoneRevealLog, Status, Category, UrgencyLevel, SubmissionType
-from app.auth.deps import get_current_leader
+from app.auth.deps import get_current_leader, get_optional_current_leader
 from app.utils.validators import mask_phone
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
+
+# Field-level correction allowlist for the feedback loop (submit_extraction_
+# feedback below). Deliberately a fixed, explicit map — never setattr() on an
+# arbitrary client-supplied field name — since this endpoint's citizen path
+# is unauthenticated (matches GET /complaints/{id}'s existing "UUID is the
+# bearer credential" trust model) and would otherwise let anyone holding a
+# complaint's UUID overwrite any column on it. None as the value means
+# free-text; an Enum class means the corrected value must be one of its
+# members (validated, not just trusted).
+_CORRECTABLE_FIELDS: Dict[str, Optional[type]] = {
+    "category": Category,
+    "urgency_level": UrgencyLevel,
+    "location_area": None,
+    "location_address": None,
+    "extracted_issue_summary": None,
+    "extracted_affected_parties": None,
+    "extracted_ask": None,
+}
+_MAX_CORRECTION_LEN = 300
+
+
+def _apply_corrections(complaint: Complaint, corrections: Dict[str, str]) -> List[str]:
+    """Validates and applies a {field: corrected_value} map to `complaint` in
+    place. Raises HTTPException(400) on an unknown field or an invalid enum
+    value rather than silently skipping it — a rejected correction should be
+    visible to whoever submitted it, not swallowed. Returns the field names
+    actually applied, for the human_corrected_fields audit trail."""
+    applied = []
+    for field, raw_value in corrections.items():
+        if field not in _CORRECTABLE_FIELDS:
+            raise HTTPException(status_code=400, detail=f"'{field}' cannot be corrected via feedback")
+        enum_cls = _CORRECTABLE_FIELDS[field]
+        value = (raw_value or "").strip()
+        if not value:
+            continue  # an empty correction for this field is a no-op, not an error
+        if enum_cls is not None:
+            try:
+                parsed = enum_cls(value.lower())
+            except ValueError:
+                valid = ", ".join(m.value for m in enum_cls)
+                raise HTTPException(status_code=400, detail=f"'{field}' must be one of: {valid}")
+            setattr(complaint, field, parsed)
+        else:
+            setattr(complaint, field, value[:_MAX_CORRECTION_LEN])
+        applied.append(field)
+    return applied
 
 
 def _masked(complaint: Complaint) -> ComplaintOut:
@@ -118,25 +164,54 @@ def reveal_phone(
 
 @router.post("/{id}/feedback", status_code=201)
 def submit_extraction_feedback(
-    id: uuid.UUID, feedback: ExtractionFeedbackIn, session: Session = Depends(get_session)
+    id: uuid.UUID, feedback: ExtractionFeedbackIn, session: Session = Depends(get_session),
+    leader: Optional[Leader] = Depends(get_optional_current_leader),
 ):
     """
-    Capture the citizen's 'did the agent understand me correctly?' answer once
-    the pipeline has finished analysing their submission (eval Layer 2 — feedback
-    as evolving ground truth). Capture only: the row is stored, not yet exported
-    anywhere.
+    Capture the citizen's or leader's 'did the agent understand me correctly?'
+    answer, AND — this is the part that previously didn't exist — actually
+    apply any structured `corrections` to the live Complaint row. The
+    ExtractionFeedback row is still written unconditionally (eval Layer 2's
+    "evolving ground truth" use case is unchanged), but a correction no
+    longer dead-ends as unread prose in a separate table: the record itself
+    gets fixed, so the leader dashboard reflects the human-verified value on
+    the very next read, not just some future eval export.
+
+    Authorization: the citizen path is intentionally unauthenticated, matching
+    GET /complaints/{id}'s existing "the UUID is the bearer credential"
+    model — a citizen can already read and is now trusted to correct their
+    own submission. A leader-sourced correction (source="leader") is
+    different: it claims the authority of an official review, so it MUST
+    come from a real, currently-logged-in leader who owns this complaint —
+    spoofing source="leader" from an anonymous request is rejected outright,
+    since corrections now have a real effect, not just an eval-log entry.
     """
     complaint = session.get(Complaint, id)
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
+    source = feedback.source or "citizen"
+    if source == "leader":
+        if leader is None or complaint.concerned_leader_id != leader.id:
+            raise HTTPException(status_code=403, detail="Leader-sourced feedback requires a matching leader session")
+
     row = ExtractionFeedback(
         complaint_id=id,
         is_correct=feedback.is_correct,
         correction=(feedback.correction or None),
-        source=feedback.source or "citizen",
-        aspect=feedback.aspect or ("overall" if (feedback.source or "citizen") == "citizen" else None),
+        source=source,
+        aspect=feedback.aspect or ("overall" if source == "citizen" else None),
     )
     session.add(row)
+
+    applied_fields: List[str] = []
+    if not feedback.is_correct and feedback.corrections:
+        applied_fields = _apply_corrections(complaint, feedback.corrections)
+        if applied_fields:
+            existing = {f for f in (complaint.human_corrected_fields or "").split(",") if f}
+            complaint.human_corrected_fields = ",".join(sorted(existing | set(applied_fields)))
+            complaint.updated_at = datetime.now(timezone.utc)
+            session.add(complaint)
+
     session.commit()
-    return {"ok": True, "feedback_id": str(row.id)}
+    return {"ok": True, "feedback_id": str(row.id), "corrected_fields": applied_fields}

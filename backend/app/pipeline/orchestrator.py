@@ -244,7 +244,8 @@ def _area_is_probably_duplicate(address: Optional[str], area: Optional[str]) -> 
     return a == b or a in b or b in a
 
 
-def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagueness_mode: bool) -> NextAction:
+def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagueness_mode: bool,
+                        known_pincode: Optional[str] = None) -> NextAction:
     """
     Pure Python, no LLM — turns the dialogue manager's diagnostic judgment
     into an actual next step. Address and issue-clarity caps give up
@@ -260,11 +261,22 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
     _looks_like_real_pincode) — a prompt regression or an off day from a
     small model should degrade to "ask one more question", never to
     silently accepting hallucinated location data.
+
+    `known_pincode` is the FR9 header field's pincode, if the citizen typed
+    one before starting the chat — this is the deterministic backstop for
+    never re-asking it: the transcript already carries the same value as
+    context for the LLM (see _build_transcript_blob), but a small/free model
+    can miss or ignore that context on an off day. Resolving it here too
+    means the conversation genuinely cannot ask for it twice, regardless of
+    what the LLM does with it.
     """
     total_bot_turns = sum(1 for t in history if t.speaker == "bot")
     area_resolved = not _area_is_probably_duplicate(state.location_address, state.location_area)
-    pincode_resolved = state.location_pincode is not None and (
-        _normalize(state.location_pincode) == "not specified" or _looks_like_real_pincode(state.location_pincode)
+    effective_pincode = state.location_pincode or (
+        known_pincode if _looks_like_real_pincode(known_pincode) else None
+    )
+    pincode_resolved = effective_pincode is not None and (
+        _normalize(effective_pincode) == "not specified" or _looks_like_real_pincode(effective_pincode)
     )
 
     def _ready() -> NextAction:
@@ -272,7 +284,7 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
             kind="ready",
             location_address=state.location_address or "not specified",
             location_area=state.location_area if area_resolved else "not specified",
-            location_pincode=state.location_pincode if pincode_resolved else "not specified",
+            location_pincode=effective_pincode if pincode_resolved else "not specified",
         )
 
     if total_bot_turns >= MAX_TOTAL_BOT_TURNS:
@@ -319,8 +331,26 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
     return _ready()
 
 
-def _build_transcript_blob(history: List[ChatTurnRecord], new_message_english: str) -> str:
+def _build_transcript_blob(history: List[ChatTurnRecord], new_message_english: str,
+                            known_city: Optional[str] = None, known_pincode: Optional[str] = None) -> str:
     lines = []
+    # FR9's city/pincode fields sit above the chat thread, not inside it — so
+    # without this, the dialogue manager and reply composer never see them
+    # and the conversation asks for the pincode again mid-chat, even though
+    # the citizen already typed it before the first message. decide_next_action
+    # separately re-enforces this deterministically (see its known_pincode
+    # param) since a small/free model can still miss context on an off day.
+    if known_city or known_pincode:
+        known_parts = [p for p in (
+            f"city={known_city}" if known_city else None,
+            f"pincode={known_pincode}" if known_pincode else None,
+        ) if p]
+        lines.append(
+            "[Context: the citizen already provided " + ", ".join(known_parts) + " in a form "
+            "field before this conversation started. Treat this as confirmed — never ask for "
+            "the pincode again if it is given here. Note 'area' is a different, smaller thing "
+            "than the city: a named neighbourhood the address sits inside, not the city itself.]"
+        )
     for turn in history:
         speaker = "Citizen" if turn.speaker == "citizen" else "Agent"
         lines.append(f"{speaker}: {turn.english_text}")
@@ -507,7 +537,10 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
             vagueness_mode = True
             submission_type = None
 
-    transcript_blob = _build_transcript_blob(payload.history, new_message_english)
+    transcript_blob = _build_transcript_blob(
+        payload.history, new_message_english,
+        known_city=payload.citizen_city, known_pincode=payload.citizen_pincode,
+    )
 
     try:
         dialogue_state = run_dialogue_manager(transcript_blob)
@@ -524,7 +557,8 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
         # call failed).
         dialogue_state = build_fallback_dialogue_state(transcript_blob)
 
-    next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode)
+    next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode,
+                                      known_pincode=payload.citizen_pincode)
 
     if next_action.kind == "vagueness_resolved":
         try:
@@ -549,7 +583,8 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
         # never silently drop a submission just because its type is unclear.
         submission_type = "suggestion" if (gk2 and gk2.label == "valid_suggestion") else "complaint"
         vagueness_mode = False
-        next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode=False)
+        next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode=False,
+                                          known_pincode=payload.citizen_pincode)
 
     if next_action.kind == "cannot_proceed":
         row_id = _insert_rejected(

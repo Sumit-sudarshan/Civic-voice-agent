@@ -3,10 +3,29 @@ import { Loader2, CheckCircle2, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-re
 import { fetchSubmissionStatus, sendExtractionFeedback } from '../api/client';
 
 // Eval Layer 2 (citizen-side): once the pipeline finishes analysing a fresh
-// submission, show the citizen what the agent understood and ask if it's right.
-// Their answer is logged as ground-truth feedback on extraction quality. This is
-// a lightweight simulation of a feedback loop — capture only, no correction is
-// pushed back into the live record.
+// submission, show the citizen what the agent understood and ask if it's
+// right. A "Not quite" answer now does two things, not one: the free-text
+// note is still logged for the eval harness's evolving ground truth (as
+// before), AND — new — the citizen can pick exactly which field was wrong
+// and type the correct value, which the backend applies directly to the
+// live Complaint row (see api/complaints.py's submit_extraction_feedback).
+// Previously a correction was prose nothing ever read back; a citizen who
+// wrote "the location is actually Sector 7, not Sector 4" had, in effect,
+// corrected nothing.
+
+const CATEGORY_OPTIONS = ['roads', 'water', 'electricity', 'sanitation', 'education', 'healthcare', 'safety', 'other'];
+const URGENCY_OPTIONS = ['critical', 'high', 'medium', 'low'];
+
+// Maps 1:1 to the backend's _CORRECTABLE_FIELDS allowlist (complaints.py) —
+// keep these in sync if a field is ever added or removed there.
+const CORRECTABLE_FIELDS = [
+  { key: 'category', label: 'Category' },
+  { key: 'urgency_level', label: 'Urgency', complaintOnly: true },
+  { key: 'location_area', label: 'Location (area)' },
+  { key: 'extracted_issue_summary', label: 'Issue summary' },
+  { key: 'extracted_affected_parties', label: "Who's affected" },
+  { key: 'extracted_ask', label: "What's being asked" },
+];
 
 function Field({ label, value }) {
   const empty = !value || String(value).toLowerCase() === 'not specified';
@@ -25,6 +44,8 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
   const [status, setStatus] = useState('analyzing'); // analyzing | ready | failed
   const [choice, setChoice] = useState(null);         // null | 'up' | 'down'
   const [correction, setCorrection] = useState('');
+  const [wrongField, setWrongField] = useState('');   // '' | one of CORRECTABLE_FIELDS keys
+  const [correctedValue, setCorrectedValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const timerRef = useRef(null);
@@ -65,9 +86,13 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
   const submit = async (isCorrect) => {
     setSubmitting(true);
     try {
+      const corrections = (!isCorrect && wrongField && correctedValue.trim())
+        ? { [wrongField]: correctedValue.trim() }
+        : undefined;
       await sendExtractionFeedback(complaintId, {
         is_correct: isCorrect,
         correction: isCorrect ? null : (correction.trim() || null),
+        corrections,
       });
       setDone(true);
       onFeedbackGiven?.();
@@ -99,10 +124,16 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
     return (
       <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-        <p className="text-xs text-green-800">Thanks! Your feedback helps us improve accuracy.</p>
+        <p className="text-xs text-green-800">
+          {wrongField && correctedValue.trim()
+            ? 'Thanks! Your correction has been applied.'
+            : 'Thanks! Your feedback helps us improve accuracy.'}
+        </p>
       </div>
     );
   }
+
+  const selectedFieldMeta = CORRECTABLE_FIELDS.find((f) => f.key === wrongField);
 
   return (
     <div className="mt-3 bg-white border border-gray-200 rounded-lg p-4">
@@ -141,16 +172,60 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
           </div>
         </div>
       ) : (
-        <div className="border-t border-gray-100 pt-3">
-          <p className="text-xs font-medium text-gray-700 mb-2">What did we get wrong? (optional)</p>
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <p className="text-xs font-medium text-gray-700">Which part should be corrected?</p>
+          <select
+            value={wrongField}
+            onChange={(e) => { setWrongField(e.target.value); setCorrectedValue(''); }}
+            className="w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-black/5"
+          >
+            <option value="">Select a field to correct (optional)</option>
+            {CORRECTABLE_FIELDS.filter((f) => !f.complaintOnly || submissionType === 'complaint').map((f) => (
+              <option key={f.key} value={f.key}>{f.label}</option>
+            ))}
+          </select>
+
+          {wrongField === 'category' && (
+            <select
+              value={correctedValue}
+              onChange={(e) => setCorrectedValue(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-lg p-2 bg-white capitalize focus:outline-none focus:ring-2 focus:ring-black/5"
+            >
+              <option value="">Correct category</option>
+              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}
+            </select>
+          )}
+
+          {wrongField === 'urgency_level' && (
+            <select
+              value={correctedValue}
+              onChange={(e) => setCorrectedValue(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-lg p-2 bg-white capitalize focus:outline-none focus:ring-2 focus:ring-black/5"
+            >
+              <option value="">Correct urgency</option>
+              {URGENCY_OPTIONS.map((u) => <option key={u} value={u} className="capitalize">{u}</option>)}
+            </select>
+          )}
+
+          {wrongField && selectedFieldMeta && !['category', 'urgency_level'].includes(wrongField) && (
+            <input
+              type="text"
+              value={correctedValue}
+              onChange={(e) => setCorrectedValue(e.target.value)}
+              placeholder={`Correct ${selectedFieldMeta.label.toLowerCase()}`}
+              className="w-full text-xs border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-black/5"
+            />
+          )}
+
+          <p className="text-xs font-medium text-gray-700 pt-1">Anything else to add? (optional)</p>
           <textarea
             value={correction}
             onChange={(e) => setCorrection(e.target.value)}
             rows={2}
-            placeholder="e.g. the location is actually Sector 7, not Sector 4"
+            placeholder="e.g. this has been happening for over a month"
             className="w-full text-xs border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-black/5 resize-none"
           />
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2">
             <button
               onClick={() => submit(false)}
               disabled={submitting}
@@ -160,7 +235,7 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
               Submit feedback
             </button>
             <button
-              onClick={() => setChoice(null)}
+              onClick={() => { setChoice(null); setWrongField(''); setCorrectedValue(''); }}
               disabled={submitting}
               className="px-3 py-1.5 rounded-lg text-gray-500 hover:text-black text-xs font-semibold transition-colors"
             >

@@ -39,12 +39,31 @@ export function buildQuestion(aspect, issue) {
       return 'Is the one-line summary an accurate reflection of the complaint?';
     case 'affected_and_ask':
       return "Is the 'who's affected' and 'what's being asked' genuinely useful here?";
+    case 'location':
+      return 'Is the area shown here correct?';
     default:
       return 'Did the AI get this right?';
   }
 }
 
-const ASPECTS = ['labelling', 'summary', 'affected_and_ask'];
+// Which Complaint field(s) a "No" answer on each aspect can correct — must
+// match backend/app/api/complaints.py's _CORRECTABLE_FIELDS allowlist.
+// 'location' was missing entirely before (area is a common, real extraction
+// error), so a leader had no way to flag or fix a wrong area at all.
+export const ASPECT_FIELDS = {
+  labelling: [
+    { key: 'category', label: 'Correct category' },
+    { key: 'urgency_level', label: 'Correct urgency', complaintOnly: true },
+  ],
+  summary: [{ key: 'extracted_issue_summary', label: 'Correct summary' }],
+  affected_and_ask: [
+    { key: 'extracted_affected_parties', label: "Correct who's affected" },
+    { key: 'extracted_ask', label: "Correct what's being asked" },
+  ],
+  location: [{ key: 'location_area', label: 'Correct area' }],
+};
+
+const ASPECTS = ['labelling', 'summary', 'affected_and_ask', 'location'];
 
 // Returns a random aspect to ask about — always, so the prompt shows up
 // reliably every time an eligible issue is expanded (see hasAnsweredLeaderFeedback

@@ -61,6 +61,13 @@ before you see it). Read the whole transcript, not just the latest line — earl
 already contain the address, area, pincode, or issue detail, and a short reply like "400033" or
 "near the temple" only makes sense in light of the Agent question immediately before it.
 
+A transcript may open with a "[Context: ...]" line — this is NOT something the citizen said in
+the chat. It is a city and/or pincode the citizen already typed into a separate form field before
+this conversation started. If a pincode is given there, treat location_pincode as already resolved
+to that value. The city named there is NOT the same thing as location_area: area is a smaller,
+specifically-named neighbourhood inside that city (e.g. city "Pune" might contain area "Kothrud"),
+never the city itself — do not fill location_area with the city name from this context line.
+
 THE MOST IMPORTANT RULE, READ THIS CAREFULLY: location_address and location_area are TWO DIFFERENT
 THINGS and must never be filled with the same value or with something that isn't genuinely that
 field. A colony/locality name (location_address) is a small, specific place. An area (location_area)

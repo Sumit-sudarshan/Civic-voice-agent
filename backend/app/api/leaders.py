@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from sqlalchemy import func
 
 from app.db.session import get_session
 from app.models.db_models import Leader
@@ -29,9 +30,12 @@ def search_leaders(
     pincode is also given, an exact match within that city is preferred, but
     if nothing matches exactly the city-level results are returned instead
     of an empty list — no automated ward-matching (out of scope), just a
-    reasonable starting set for the citizen to pick from.
+    reasonable starting set for the citizen to pick from. Results are sorted
+    alphabetically by name (case-insensitive) so the list reads predictably
+    regardless of how many leaders match — the frontend dropdown is also
+    searchable, but a stable, alphabetical base order matters even then.
     """
-    statement = select(Leader)
+    statement = select(Leader).order_by(func.lower(Leader.name))
     if city:
         statement = statement.where(Leader.city.ilike(f"%{city.strip()}%"))
     leaders = session.exec(statement).all()

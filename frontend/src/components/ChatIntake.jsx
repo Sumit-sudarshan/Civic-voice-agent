@@ -5,6 +5,7 @@ import { invalidateComplaints } from '../api/invalidation';
 import { getRejectionMessage } from '../api/rejectionMessages';
 import { addTrackedSubmission } from '../api/trackedSubmissions';
 import ExtractionFeedbackCard from './ExtractionFeedbackCard';
+import SearchableSelect from './SearchableSelect';
 
 const GREETING = 'Describe your complaint/Suggestion.';
 
@@ -83,6 +84,10 @@ export default function ChatIntake({ onClose, user }) {
         citizen_last_name: user.last_name,
         citizen_phone: user.phone,
         concerned_leader_id: concernedLeaderId || null,
+        // So the conversation never re-asks for the pincode/city already
+        // typed into the FR9 fields above the thread.
+        citizen_city: city.trim() || null,
+        citizen_pincode: pincode.trim() || null,
       }, (chunk) => setStreamingText((prev) => prev + chunk));
 
       // Backfill the just-sent citizen turn with its English-normalized text
@@ -144,7 +149,16 @@ export default function ChatIntake({ onClose, user }) {
   // the citizen got a "Submitted Successfully" confirmation for a submission
   // that had, in practice, gone nowhere. It's required before the first
   // message now, and stays editable for the rest of the conversation.
+  //
+  // City and pincode are now required too, not just the dropdown they filter
+  // — both are sent to the backend (citizen_city/citizen_pincode) and used
+  // to skip the redundant "what's your PIN code?" mid-chat question, so an
+  // empty/half-typed value here would silently reintroduce that.
   const needsLeader = !concernedLeaderId;
+  const needsCity = !city.trim();
+  const pincodeValid = /^\d{6}$/.test(pincode.trim());
+  const needsPincode = !pincodeValid;
+  const hasMissingRequiredField = needsLeader || needsCity || needsPincode;
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -162,29 +176,30 @@ export default function ChatIntake({ onClose, user }) {
           <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center gap-2 shrink-0">
             <input
               type="text" value={city} onChange={(e) => setCity(e.target.value)}
-              placeholder="City"
-              className="w-24 border border-gray-300 rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="City (required)"
+              className={`w-28 border rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsCity ? 'border-amber-400' : 'border-gray-300'
+                }`}
             />
             <input
               type="text" value={pincode} onChange={(e) => setPincode(e.target.value)}
-              placeholder="Pincode"
-              className="w-24 border border-gray-300 rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="Pincode (required)"
+              maxLength={6}
+              className={`w-28 border rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsPincode ? 'border-amber-400' : 'border-gray-300'
+                }`}
             />
-            <select
-              value={concernedLeaderId} onChange={(e) => setConcernedLeaderId(e.target.value)}
-              className={`flex-1 min-w-[140px] border rounded-full px-3 py-1 text-xs text-black bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${
-                needsLeader ? 'border-amber-400' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Concerned person (required)</option>
-              {leaders.map((l) => (
-                <option key={l.id} value={l.id}>{l.name} — {l.city}, {l.pincode}</option>
-              ))}
-            </select>
-            {needsLeader && (
+            <SearchableSelect
+              wrapperClassName="flex-1 min-w-[140px]"
+              options={leaders.map((l) => ({ value: l.id, label: `${l.name} - ${l.city}, ${l.pincode}` }))}
+              value={concernedLeaderId}
+              onChange={setConcernedLeaderId}
+              placeholder="Concerned person (required)"
+              inputClassName={`w-full border rounded-full pl-3 pr-7 py-1 text-xs text-black bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsLeader ? 'border-amber-400' : 'border-gray-300'
+                }`}
+            />
+            {hasMissingRequiredField && (
               <p className="w-full text-[10px] text-amber-700">
-                {leaders.length === 0
-                  ? 'Enter your city (and pincode, if you know it) to find the person responsible for your area.'
+                {needsCity || needsPincode
+                  ? 'City and a 6-digit pincode are both required so we can find the right person for your area.'
                   : 'Choose the concerned person so your submission reaches the right leader.'}
               </p>
             )}
@@ -224,9 +239,8 @@ export default function ChatIntake({ onClose, user }) {
                     {m.speaker === 'citizen' ? <User className="w-3.5 h-3.5 text-white" /> : <Bot className="w-3.5 h-3.5 text-gray-700" />}
                   </div>
                   <div
-                    className={`max-w-[75%] rounded-lg px-3 py-2 text-xs leading-relaxed ${
-                      m.speaker === 'citizen' ? 'bg-[#0e75c6] text-white' : 'bg-white border border-gray-200 text-black'
-                    }`}
+                    className={`max-w-[75%] rounded-lg px-3 py-2 text-xs leading-relaxed ${m.speaker === 'citizen' ? 'bg-[#0e75c6] text-white' : 'bg-white border border-gray-200 text-black'
+                      }`}
                   >
                     {m.displayText}
                   </div>
@@ -274,17 +288,17 @@ export default function ChatIntake({ onClose, user }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                disabled={sending || !!outcome || needsLeader}
+                disabled={sending || !!outcome || hasMissingRequiredField}
                 placeholder={
                   outcome ? 'This conversation has ended.'
-                    : needsLeader ? 'Select a concerned person above to start…'
-                    : 'Type your message...'
+                    : hasMissingRequiredField ? 'Fill in city, pincode, and concerned person above to start…'
+                      : 'Type your message...'
                 }
                 className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-full bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={sending || !!outcome || needsLeader || !input.trim()}
+                disabled={sending || !!outcome || hasMissingRequiredField || !input.trim()}
                 className="w-9 h-9 rounded-full bg-[#0e75c6] text-white flex items-center justify-center shrink-0 hover:bg-[#054483] disabled:opacity-40 transition-colors"
               >
                 <Send className="w-4 h-4" />

@@ -36,7 +36,7 @@ jobs:
 
             cd ../frontend
             npm install --silent
-            VITE_API_BASE_URL= npm run build
+            VITE_API_BASE_URL= VITE_RECAPTCHA_SITE_KEY=6LfhEWgtAAAAAMQSyBElwqdq3Z6JmjRFcdtrtsSV npm run build
 
             sudo systemctl restart civic-voice.service
 

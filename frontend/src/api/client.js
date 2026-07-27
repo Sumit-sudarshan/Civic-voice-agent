@@ -120,13 +120,20 @@ export async function fetchSubmissionStatus(type, id) {
 }
 
 /**
- * Citizen's post-submission verdict on the AI's extraction (eval Layer 2).
+ * Citizen's or leader's post-submission verdict on the AI's extraction
+ * (eval Layer 2), now also able to apply a structured correction directly
+ * to the record. `credentials: 'include'` matters here in a way it didn't
+ * before: a leader-sourced correction (source: 'leader') is authorized
+ * server-side against the real session cookie (see get_optional_current_leader
+ * in complaints.py) — without it, every leader correction would 403. Citizen
+ * calls are unauthenticated either way; sending the cookie is harmless for them.
  * @param {string} id - complaint id
- * @param {Object} body - { is_correct: boolean, correction?: string }
+ * @param {Object} body - { is_correct, correction?, source?, aspect?, corrections? }
  */
 export async function sendExtractionFeedback(id, body) {
   const res = await fetch(`${API_BASE}/complaints/${id}/feedback`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });

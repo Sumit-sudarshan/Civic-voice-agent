@@ -49,6 +49,18 @@ def _run_migrations():
             # Column already exists — this is the normal path after first run
             conn.rollback()
 
+        # Migration: human_corrected_fields — audit trail for the feedback
+        # loop actually writing back to the record (see api/complaints.py's
+        # submit_extraction_feedback), not just capturing it for later eval.
+        try:
+            conn.execute(text(
+                "ALTER TABLE complaint ADD COLUMN human_corrected_fields TEXT"
+            ))
+            conn.commit()
+            logger.info("Migration applied: complaint.human_corrected_fields column added")
+        except (OperationalError, ProgrammingError):
+            conn.rollback()
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     _run_migrations()
