@@ -87,9 +87,9 @@ export default function SignupPage({ onBack, onGoToLogin }) {
           ) : (
             <>
               <div className="flex items-center justify-center mb-5 gap-3">
-                <div className="flex-1 h-px bg-green-600" />
-                <h2 className="text-lg font-bold text-green-700 tracking-widest whitespace-nowrap">CITIZEN SIGN UP</h2>
-                <div className="flex-1 h-px bg-green-600" />
+                <div className="flex-1 h-px bg-[#0e75c6]" />
+                <h2 className="text-lg font-bold text-[#0e75c6] tracking-widest whitespace-nowrap">CITIZEN SIGN UP</h2>
+                <div className="flex-1 h-px bg-[#0e75c6]" />
               </div>
 
               <div className="text-right mb-4">
@@ -133,7 +133,7 @@ export default function SignupPage({ onBack, onGoToLogin }) {
                 {error && <p className="text-red-500 text-xs text-center">{error}</p>}
 
                 <div className="flex items-center justify-center pt-2">
-                  <button type="submit" disabled={submitting} className="bg-green-600 text-white px-8 py-2 rounded font-semibold hover:bg-green-700 transition-colors text-sm disabled:opacity-50">
+                  <button type="submit" disabled={submitting} className="bg-[#0e75c6] text-white px-8 py-2 rounded font-semibold hover:bg-[#054483] transition-colors text-sm disabled:opacity-50">
                     {submitting ? 'Creating…' : 'Submit'}
                   </button>
                 </div>
