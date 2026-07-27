@@ -1,7 +1,9 @@
 import json
+import time
 import ollama
 import httpx
 import logging
+from dataclasses import dataclass
 from typing import Iterator, Type, TypeVar, Optional
 from pydantic import BaseModel
 from app.config import settings
@@ -111,27 +113,123 @@ class _GroqChatClient:
         log_llm_call(stage, model, usage)
 
 
-def _build_llm_client(timeout: float):
-    if settings.GROQ_API_KEY:
-        logger.info(f"LLM backend: Groq (model={settings.LLM_MODEL}, timeout={timeout}s)")
-        return _GroqChatClient(api_key=settings.GROQ_API_KEY, timeout=timeout)
+@dataclass(frozen=True)
+class _Provider:
+    """One LLM backend plus the model name that is valid *for that backend*.
+    The model cannot be a single global: OpenRouter and Groq have entirely
+    separate model namespaces ("google/gemma-4-31b-it:free" vs
+    "llama-3.1-8b-instant"), so a name that works on one is meaningless on
+    the other and the pairing has to travel together through failover."""
+    name: str
+    client: object
+    model: str
+
+
+def _build_provider_chain(timeout: float) -> list[_Provider]:
+    """
+    Ordered failover chain, highest priority first. Any configured provider
+    is included; the chain is walked in order until one returns a usable
+    response (see call_llm / stream_llm_text).
+
+    OpenRouter is tried before Groq because it is the model the pipeline's
+    prompts were most recently tuned against; Groq exists to keep the app
+    working through OpenRouter's free-tier 429s, which are frequent enough
+    to have caused visible user-facing degradation in real use. Ollama is
+    the last resort and only when no hosted key is configured at all, since
+    on the e2-micro it is the local embedding model's host, not a
+    general-purpose reasoning backend.
+    """
+    chain: list[_Provider] = []
     if settings.OPENROUTER_API_KEY:
-        logger.info(f"LLM backend: OpenRouter (model={settings.LLM_MODEL}, timeout={timeout}s)")
-        return _OpenRouterChatClient(api_key=settings.OPENROUTER_API_KEY, timeout=timeout)
-    logger.info(f"LLM backend: Ollama (model={settings.LLM_MODEL}, host={settings.OLLAMA_HOST}, timeout={timeout}s)")
-    return ollama.Client(host=settings.OLLAMA_HOST, timeout=timeout)
+        chain.append(_Provider("openrouter",
+                               _OpenRouterChatClient(api_key=settings.OPENROUTER_API_KEY, timeout=timeout),
+                               settings.OPENROUTER_MODEL))
+    if settings.GROQ_API_KEY:
+        chain.append(_Provider("groq",
+                               _GroqChatClient(api_key=settings.GROQ_API_KEY, timeout=timeout),
+                               settings.GROQ_MODEL))
+    if not chain:
+        chain.append(_Provider("ollama",
+                               ollama.Client(host=settings.OLLAMA_HOST, timeout=timeout),
+                               settings.OLLAMA_LLM_MODEL))
+    logger.info(
+        f"LLM provider chain (timeout={timeout}s): "
+        + " -> ".join(f"{p.name}({p.model})" for p in chain)
+    )
+    return chain
 
 
-# Two client instances, not one — the sync conversational loop (gatekeeper,
-# dialogue manager, reply composer) and the async finalize pipeline
-# (classify, urgency, extract) have different timeout budgets (NFR8), and
-# each backend's client pins its timeout at construction time rather than
-# accepting it per call. ollama_client kept as an alias for the sync client
-# since a few call sites (translation.py) reach for it directly for backward
-# compatibility.
-sync_llm_client = _build_llm_client(settings.SYNC_LLM_TIMEOUT_S)
-async_llm_client = _build_llm_client(settings.ASYNC_LLM_TIMEOUT_S)
+# ── Rate-limit circuit breaker ─────────────────────────────────────────────
+# Retrying a provider that just returned 429 is wasted work: the full retry
+# budget plus its backoff sleeps (~4s) burns before failover, on every call,
+# while the quota demonstrably will not reset in that window. Once a provider
+# rate-limits, it is skipped entirely for a cooldown so traffic goes straight
+# to the next one. In-memory and per-process by design — this is a latency
+# optimization, not a correctness mechanism, so it does not justify shared
+# state across workers.
+_RATE_LIMIT_COOLDOWN_S = 60.0
+_provider_cooldowns: dict[str, float] = {}
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 429:
+        return True
+    if getattr(exc, "status_code", None) == 429:
+        return True
+    text = str(exc).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
+
+
+def _cool_down(provider_name: str) -> None:
+    _provider_cooldowns[provider_name] = time.monotonic() + _RATE_LIMIT_COOLDOWN_S
+    logger.warning(f"Provider {provider_name} rate-limited; skipping it for {_RATE_LIMIT_COOLDOWN_S:.0f}s")
+
+
+def _is_cooling_down(provider_name: str) -> bool:
+    return time.monotonic() < _provider_cooldowns.get(provider_name, 0.0)
+
+
+def _usable_providers(chain: list[_Provider]) -> list[_Provider]:
+    """Cooled-down providers are skipped — unless every provider is cooling,
+    in which case the whole chain is tried anyway rather than failing without
+    even attempting a call (the cooldown is a heuristic; a real quota reset
+    inside the window should not be locked out)."""
+    return [p for p in chain if not _is_cooling_down(p.name)] or chain
+
+
+# Two chains, not one — the sync conversational loop (gatekeeper, dialogue
+# manager, reply composer) and the async finalize pipeline (classify,
+# urgency, extract) have different timeout budgets (NFR8), and each backend's
+# client pins its timeout at construction time rather than accepting it per
+# call.
+sync_providers = _build_provider_chain(settings.SYNC_LLM_TIMEOUT_S)
+async_providers = _build_provider_chain(settings.ASYNC_LLM_TIMEOUT_S)
+
+# Primary-provider aliases, kept for the Ollama-shaped call sites below
+# (call_llm_text) and any external caller that reaches for a bare client.
+sync_llm_client = sync_providers[0].client
+async_llm_client = async_providers[0].client
 ollama_client = sync_llm_client
+
+# Captured at import, before any eval script mutates settings.LLM_MODEL, so
+# an explicit override can be told apart from the value config.py derived
+# from whichever provider is configured. See _pinned_model().
+_DEFAULT_LLM_MODEL = settings.LLM_MODEL
+
+
+def _pinned_model() -> Optional[str]:
+    """
+    The eval harness pins a specific model (`settings.LLM_MODEL = args.model`
+    in eval/run_eval.py and friends) to measure *that* model's accuracy. If
+    failover silently answered some of those cases from a different provider,
+    the resulting numbers would be a blend of two models attributed to one —
+    quietly corrupting the benchmark the whole eval exists to produce. So a
+    pinned model disables failover: the primary provider is used with that
+    model, and a failure is a real failure.
+    """
+    current = settings.LLM_MODEL
+    return current if current and current != _DEFAULT_LLM_MODEL else None
 
 def call_llm(system_prompt: str, user_prompt: str, response_model: Type[T], mode: str = "sync",
              stage: str = "unknown") -> Optional[T]:
@@ -144,19 +242,37 @@ def call_llm(system_prompt: str, user_prompt: str, response_model: Type[T], mode
     "urgency" — so per-call cost is queryable by pipeline stage.
     """
     if mode == "async":
-        client, retries, backoff = async_llm_client, settings.ASYNC_LLM_RETRIES, settings.ASYNC_LLM_BACKOFF_S
+        chain, retries, backoff = async_providers, settings.ASYNC_LLM_RETRIES, settings.ASYNC_LLM_BACKOFF_S
     else:
-        client, retries, backoff = sync_llm_client, settings.SYNC_LLM_RETRIES, settings.SYNC_LLM_BACKOFF_S
-    return parse_with_retries(
-        client=client,
-        model=settings.LLM_MODEL,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        response_model=response_model,
-        max_retries=retries,
-        backoff_schedule=backoff,
-        stage=stage,
-    )
+        chain, retries, backoff = sync_providers, settings.SYNC_LLM_RETRIES, settings.SYNC_LLM_BACKOFF_S
+
+    pinned = _pinned_model()
+    providers = [chain[0]] if pinned else _usable_providers(chain)
+
+    for provider in providers:
+        def _on_call_error(exc: Exception, _name=provider.name) -> bool:
+            if _is_rate_limit_error(exc):
+                _cool_down(_name)
+                return True  # don't burn the retry budget on a live quota block
+            return False
+
+        result = parse_with_retries(
+            client=provider.client,
+            model=pinned or provider.model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_model=response_model,
+            max_retries=retries,
+            backoff_schedule=backoff,
+            stage=stage,
+            on_call_error=_on_call_error,
+        )
+        if result is not None:
+            return result
+        if len(providers) > 1:
+            logger.warning(f"Provider {provider.name} failed for stage={stage}; trying next in chain")
+
+    return None
 
 def stream_llm_text(system_prompt: str, user_prompt: str, stage: str = "unknown") -> Iterator[str]:
     """
@@ -175,21 +291,46 @@ def stream_llm_text(system_prompt: str, user_prompt: str, stage: str = "unknown"
     ]
     options = {"temperature": 0.4}
 
-    if isinstance(sync_llm_client, (_OpenRouterChatClient, _GroqChatClient)):
-        yield from sync_llm_client.chat_stream(model=settings.LLM_MODEL, messages=messages, options=options, stage=stage)
-        return
+    pinned = _pinned_model()
+    providers = [sync_providers[0]] if pinned else _usable_providers(sync_providers)
+    last_error: Optional[Exception] = None
 
-    # Raw ollama.Client — no wrapper class, so handle its native stream shape directly.
-    for chunk in sync_llm_client.chat(
-        model=settings.LLM_MODEL,
-        messages=messages,
-        stream=True,
-        keep_alive=settings.OLLAMA_KEEP_ALIVE,
-        options={**options, "num_thread": settings.OLLAMA_NUM_THREAD, "num_ctx": settings.OLLAMA_NUM_CTX},
-    ):
-        content = chunk.get("message", {}).get("content", "") if isinstance(chunk, dict) else chunk.message.content
-        if content:
-            yield content
+    for provider in providers:
+        model = pinned or provider.model
+        emitted = False
+        try:
+            if isinstance(provider.client, (_OpenRouterChatClient, _GroqChatClient)):
+                for chunk in provider.client.chat_stream(model=model, messages=messages, options=options, stage=stage):
+                    emitted = True
+                    yield chunk
+            else:
+                # Raw ollama.Client — no wrapper class, so handle its native stream shape directly.
+                for chunk in provider.client.chat(
+                    model=model,
+                    messages=messages,
+                    stream=True,
+                    keep_alive=settings.OLLAMA_KEEP_ALIVE,
+                    options={**options, "num_thread": settings.OLLAMA_NUM_THREAD, "num_ctx": settings.OLLAMA_NUM_CTX},
+                ):
+                    content = chunk.get("message", {}).get("content", "") if isinstance(chunk, dict) else chunk.message.content
+                    if content:
+                        emitted = True
+                        yield content
+            return
+        except Exception as e:
+            last_error = e
+            if _is_rate_limit_error(e):
+                _cool_down(provider.name)
+            # Only fail over if nothing reached the citizen yet. Once tokens
+            # have been streamed, restarting on another provider would splice
+            # two different half-sentences together mid-reply; the caller
+            # (orchestrator.stream_turn_reply) already keeps the partial text.
+            if emitted:
+                raise
+            logger.warning(f"Streaming provider {provider.name} failed before emitting for stage={stage}: {e}")
+
+    if last_error is not None:
+        raise last_error
 
 def call_llm_text(system_prompt: str, user_prompt: str) -> Optional[str]:
     """

@@ -2,10 +2,16 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # --- LLM backend selection ---
-    # Reasoning only (gatekeeper, classify, urgency, extract, dialogue manager):
-    #   GROQ_API_KEY set             -> Groq (GROQ_MODEL)
-    #   else OPENROUTER_API_KEY set  -> OpenRouter (OPENROUTER_MODEL)   <- MVP default
-    #   else                         -> Ollama (OLLAMA_LLM_MODEL)
+    # Reasoning only (gatekeeper, classify, urgency, extract, dialogue manager).
+    # Every configured provider joins an ordered FAILOVER CHAIN, highest first
+    # (llm/client.py::_build_provider_chain) — a provider that errors or
+    # rate-limits hands off to the next rather than failing the call:
+    #   OPENROUTER_API_KEY set -> OpenRouter (OPENROUTER_MODEL)   <- primary
+    #   GROQ_API_KEY set       -> Groq (GROQ_MODEL)               <- failover
+    #   neither set            -> Ollama (OLLAMA_LLM_MODEL)
+    # Setting both is the recommended configuration: OpenRouter's free tier
+    # 429s frequently, and Groq's independent free-tier quota keeps the app
+    # working through it. LLM_MODEL below always tracks the PRIMARY provider.
     # Embeddings are ALWAYS local Ollama (EMBEDDING_MODEL). By design the dedup
     # vectors are derived from PII-bearing complaint text, so that text never
     # leaves the VM — it is not routed through any hosted API regardless of the
@@ -75,10 +81,16 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         # Always recompute (not just "if empty") so a stray leftover
         # LLM_MODEL=/EMBED_MODEL= line in an old .env file can never shadow this.
-        if self.GROQ_API_KEY:
-            self.LLM_MODEL = self.GROQ_MODEL
-        elif self.OPENROUTER_API_KEY:
+        #
+        # Order MUST match llm/client.py's _build_provider_chain: LLM_MODEL is
+        # the *primary* provider's model, and call_llm_text pairs it with that
+        # provider's client. If the two disagreed, a config with both keys set
+        # would send (say) Groq's "llama-3.1-8b-instant" to OpenRouter, which
+        # does not have that model name at all.
+        if self.OPENROUTER_API_KEY:
             self.LLM_MODEL = self.OPENROUTER_MODEL
+        elif self.GROQ_API_KEY:
+            self.LLM_MODEL = self.GROQ_MODEL
         else:
             self.LLM_MODEL = self.OLLAMA_LLM_MODEL
 

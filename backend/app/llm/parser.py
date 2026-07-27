@@ -46,6 +46,7 @@ def _build_simple_schema_hint(response_model: Type[T]) -> str:
 def parse_with_retries(
     client, model: str, system_prompt: str, user_prompt: str, response_model: Type[T],
     max_retries: int = 2, backoff_schedule: Optional[list] = None, stage: str = "unknown",
+    on_call_error=None,
 ) -> Optional[T]:
     """
     Calls the LLM, attempts to parse as response_model.
@@ -60,6 +61,14 @@ def parse_with_retries(
     Returns None if every attempt fails, so the caller can fall back
     gracefully (a static template, needs_human_review, etc.) — this
     function itself never raises.
+
+    `on_call_error(exc) -> bool` is an optional hook for non-validation
+    errors. Returning True means "this provider is not worth retrying, stop
+    now" — used by client.py to abandon a rate-limited provider immediately
+    and fail over to the next one, instead of burning the full retry budget
+    (plus its backoff sleeps) against a quota that will not reset in a few
+    seconds. Validation errors deliberately do NOT consult it: malformed
+    JSON is a prompting problem the retry can actually fix.
     """
     if backoff_schedule is None:
         backoff_schedule = [1.0, 3.0]
@@ -111,8 +120,12 @@ def parse_with_retries(
             )
         except Exception as e:
             logger.warning(f"LLM call error on attempt {attempt + 1}/{total_attempts}: {e}")
-            if is_last_attempt:
-                logger.error(f"Final LLM retry failed (call error): {e}. Returning None.")
+            give_up = bool(on_call_error(e)) if on_call_error else False
+            if is_last_attempt or give_up:
+                if give_up and not is_last_attempt:
+                    logger.warning(f"Abandoning this provider early (not retryable): {e}")
+                else:
+                    logger.error(f"Final LLM retry failed (call error): {e}. Returning None.")
                 log_llm_call(stage, model, None, success=False)
                 return None
 

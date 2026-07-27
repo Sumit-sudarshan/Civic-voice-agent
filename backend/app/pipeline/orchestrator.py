@@ -13,6 +13,7 @@ from app.pipeline.stages import (
     run_dialogue_manager, run_reply_composer, stream_reply_composer,
 )
 from app.pipeline.dedup import embed, find_duplicate, find_reopened, merge_complaint
+from app.pipeline.fallback_dialogue import build_fallback_dialogue_state
 from app.pipeline.language import detect_language
 from app.pipeline.translation import translate_to_english
 from app.pipeline.dialogue_templates import get_template
@@ -515,8 +516,13 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
         dialogue_state = None
 
     if dialogue_state is None:
-        # Graceful fallback — keep the conversation moving with a safe default
-        dialogue_state = DialogueState(issue_clear=False)
+        # Graceful fallback — read the transcript directly rather than
+        # assuming nothing is known (see fallback_dialogue.py's docstring:
+        # the prior blind DialogueState(issue_clear=False) default asked
+        # "describe the issue in more detail" even when the citizen had
+        # already written several detailed sentences, purely because the LLM
+        # call failed).
+        dialogue_state = build_fallback_dialogue_state(transcript_blob)
 
     next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode)
 
@@ -658,9 +664,12 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
         question_en, question_localized = composed.reply_english, composed.reply_localized
     else:
         # Graceful fallback — static template, never crash the turn on a
-        # single bad LLM response.
-        question_en = get_template(pq.question_key, "en")
-        question_localized = get_template(pq.question_key, pq.detected_lang)
+        # single bad LLM response. Seeded on the transcript so the English
+        # and localized picks below land on the same one of the 5 phrasings
+        # (see dialogue_templates.get_template's docstring), and so repeated
+        # fallbacks across different conversations don't all read identically.
+        question_en = get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
+        question_localized = get_template(pq.question_key, pq.detected_lang, variation_seed=pq.transcript_blob)
 
     return _question_response(pq, question_en, question_localized)
 
@@ -696,8 +705,8 @@ def stream_turn_reply(payload: ChatMessageRequest, session: Session, background_
         if composed:
             question_en, question_localized = composed.reply_english, composed.reply_localized
         else:
-            question_en = get_template(pq.question_key, "en")
-            question_localized = get_template(pq.question_key, pq.detected_lang)
+            question_en = get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
+            question_localized = get_template(pq.question_key, pq.detected_lang, variation_seed=pq.transcript_blob)
         yield f"event: final\ndata: {_question_response(pq, question_en, question_localized).model_dump_json()}\n\n"
         return
 
@@ -713,7 +722,7 @@ def stream_turn_reply(payload: ChatMessageRequest, session: Session, background_
     # Partial text (failed partway through) is used as-is rather than
     # discarded — better than nothing, and a full retry can't resume a
     # stream cleanly mid-sentence.
-    final_text = full_text.strip() or get_template(pq.question_key, "en")
+    final_text = full_text.strip() or get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
     yield f"event: final\ndata: {_question_response(pq, final_text, final_text).model_dump_json()}\n\n"
 
 
