@@ -27,6 +27,18 @@ export default function ChatIntake({ onClose, user }) {
   // with no preceding chunks — see stream_turn_reply's docstring).
   const [streamingText, setStreamingText] = useState('');
   const scrollRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-grow the message box vertically as the citizen types a long
+  // description, instead of letting a single-line input scroll horizontally.
+  // Capped (max-h-28 below) so it doesn't take over the whole chat window;
+  // overflow-y-auto on the element itself takes over past that height.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+  }, [input]);
 
   // FR9 — concerned-person selector. City/pincode narrow a leader dropdown;
   // editable throughout the conversation, sent (possibly changed) with every
@@ -112,6 +124,8 @@ export default function ChatIntake({ onClose, user }) {
         setOutcome({ kind: 'rejected', reason: res.rejection_reason });
       } else if (res.kind === 'rate_limited') {
         setOutcome({ kind: 'rate_limited', message: res.rate_limit_message });
+      } else if (res.kind === 'service_unavailable') {
+        setOutcome({ kind: 'service_unavailable', message: res.service_unavailable_message });
       } else if (res.kind === 'submitted') {
         setMessages((prev) => [...prev, { speaker: 'bot', displayText: res.confirmation_text, englishText: res.confirmation_text }]);
         addTrackedSubmission(user.id, {
@@ -176,13 +190,13 @@ export default function ChatIntake({ onClose, user }) {
           <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center gap-2 shrink-0">
             <input
               type="text" value={city} onChange={(e) => setCity(e.target.value)}
-              placeholder="City (required)"
+              placeholder="City *"
               className={`w-28 border rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsCity ? 'border-amber-400' : 'border-gray-300'
                 }`}
             />
             <input
               type="text" value={pincode} onChange={(e) => setPincode(e.target.value)}
-              placeholder="Pincode (required)"
+              placeholder="Pincode *"
               maxLength={6}
               className={`w-28 border rounded-full px-3 py-1 text-xs text-black focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsPincode ? 'border-amber-400' : 'border-gray-300'
                 }`}
@@ -192,7 +206,7 @@ export default function ChatIntake({ onClose, user }) {
               options={leaders.map((l) => ({ value: l.id, label: `${l.name} - ${l.city}, ${l.pincode}` }))}
               value={concernedLeaderId}
               onChange={setConcernedLeaderId}
-              placeholder="Concerned person (required)"
+              placeholder="Concerned person *"
               inputClassName={`w-full border rounded-full pl-3 pr-7 py-1 text-xs text-black bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${needsLeader ? 'border-amber-400' : 'border-gray-300'
                 }`}
             />
@@ -281,20 +295,39 @@ export default function ChatIntake({ onClose, user }) {
                   </div>
                 </div>
               )}
+
+              {outcome?.kind === 'service_unavailable' && (
+                <div className="flex items-start gap-2 p-2.5 rounded border bg-red-50 border-red-200">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                  <div>
+                    <p className="text-xs font-bold text-gray-800 mb-0.5">Service unavailable</p>
+                    <p className="text-xs text-gray-700">{outcome.message}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <form onSubmit={handleSend} className="border-t border-gray-200 px-3 py-2.5 flex items-center gap-2 shrink-0 bg-white">
-              <input
-                type="text"
+            <form onSubmit={handleSend} className="border-t border-gray-200 px-3 py-2.5 flex items-end gap-2 shrink-0 bg-white">
+              <textarea
+                ref={textareaRef}
+                rows={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter sends (matching the previous single-line input);
+                  // Shift+Enter inserts a newline like every other chat UI.
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
                 disabled={sending || !!outcome || hasMissingRequiredField}
                 placeholder={
                   outcome ? 'This conversation has ended.'
                     : hasMissingRequiredField ? 'Fill in city, pincode, and concerned person above to start…'
                       : 'Type your message...'
                 }
-                className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-full bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-2xl bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none overflow-y-auto leading-relaxed max-h-28"
               />
               <button
                 type="submit"

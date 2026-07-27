@@ -115,7 +115,7 @@ class LocationSlotsOut(BaseModel):
     pincode: Optional[str] = None
 
 class ChatTurnResponse(BaseModel):
-    kind: Literal["rejected", "question", "submitted", "rate_limited"]
+    kind: Literal["rejected", "question", "submitted", "rate_limited", "service_unavailable"]
     detected_language: str
     # English-normalized version of the citizen's just-submitted message —
     # the frontend stores THIS (not the original-language text) as this
@@ -129,6 +129,12 @@ class ChatTurnResponse(BaseModel):
 
     # kind == "rate_limited"
     rate_limit_message: Optional[str] = None
+
+    # kind == "service_unavailable" — every configured LLM provider
+    # (OpenRouter, Groq) failed/rate-limited on this turn. Ends the
+    # conversation with an honest error rather than degrading to a
+    # heuristic-guessed question (see orchestrator._prepare_turn).
+    service_unavailable_message: Optional[str] = None
 
     # kind == "question"
     question_key: Optional[str] = None

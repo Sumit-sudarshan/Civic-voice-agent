@@ -66,6 +66,16 @@ class LoginRequest(BaseModel):
     recaptcha_token: str = ""
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    recaptcha_token: str = ""
+
+
+class ResetPasswordRequest(BaseModel):
+    access_token: str
+    new_password: str
+
+
 def _signup_message(body: dict) -> str:
     """
     The "check your email" copy is only true when the project requires email
@@ -223,6 +233,51 @@ def login(payload: LoginRequest, request: Request, response: Response, session: 
         path="/",
     )
     return _serialize_identity(user["id"], user["email"], meta, session)
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    if not verify_recaptcha(payload.recaptcha_token, "forgot_password"):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed. Please try again.")
+
+    # No Supabase Management API access to register redirect URLs ahead of
+    # time (same standing gap as the email-confirmation toggle in Phase 3),
+    # so the redirect target is derived from the caller's own Origin/Referer
+    # rather than a hardcoded setting — works for both the ephemeral tunnel
+    # URL and local dev without a code change either way. Still requires the
+    # exact origin (or a wildcard covering it) to be added once, by hand, to
+    # Supabase Dashboard -> Authentication -> URL Configuration -> Redirect
+    # URLs, or GoTrue silently drops the redirect_to and falls back to its
+    # own configured Site URL.
+    origin = request.headers.get("origin") or request.headers.get("referer", "").rstrip("/")
+    redirect_to = f"{origin}/reset-password" if origin else None
+
+    resp = httpx.post(
+        f"{_SUPABASE_AUTH_URL}/recover",
+        headers=_AUTH_HEADERS,
+        params={"redirect_to": redirect_to} if redirect_to else {},
+        json={"email": payload.email},
+        timeout=20,
+    )
+    # GoTrue's /recover deliberately returns 200 regardless of whether the
+    # email is registered (anti-enumeration, built in) — the generic message
+    # below is honest in both cases, not a workaround for a real error.
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
+    return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    resp = httpx.put(
+        f"{_SUPABASE_AUTH_URL}/user",
+        headers={**_AUTH_HEADERS, "Authorization": f"Bearer {payload.access_token}"},
+        json={"password": payload.new_password},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
+    return {"message": "Password updated. You can now log in with your new password."}
 
 
 @router.post("/logout")

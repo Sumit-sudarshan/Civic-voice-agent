@@ -43,6 +43,18 @@ export async function login({ email, password }) {
   return authFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, recaptcha_token }) });
 }
 
+export async function forgotPassword({ email }) {
+  const recaptcha_token = await getRecaptchaToken('forgot_password');
+  return authFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email, recaptcha_token }) });
+}
+
+export function resetPassword({ accessToken, newPassword }) {
+  return authFetch('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ access_token: accessToken, new_password: newPassword }),
+  });
+}
+
 export function logout() {
   return authFetch('/auth/logout', { method: 'POST' });
 }

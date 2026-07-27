@@ -1,6 +1,5 @@
 import json
 import time
-import ollama
 import httpx
 import logging
 from dataclasses import dataclass
@@ -134,10 +133,15 @@ def _build_provider_chain(timeout: float) -> list[_Provider]:
     OpenRouter is tried before Groq because it is the model the pipeline's
     prompts were most recently tuned against; Groq exists to keep the app
     working through OpenRouter's free-tier 429s, which are frequent enough
-    to have caused visible user-facing degradation in real use. Ollama is
-    the last resort and only when no hosted key is configured at all, since
-    on the e2-micro it is the local embedding model's host, not a
-    general-purpose reasoning backend.
+    to have caused visible user-facing degradation in real use.
+
+    Ollama is deliberately NOT a reasoning fallback here (it remains the
+    embedding backend for dedup — a separate, direct ollama.Client used only
+    in pipeline/dedup.py). Reasoning fully exhausting this chain (both
+    providers down/rate-limited) is meant to surface as a real, visible
+    "service unavailable" outcome to the citizen — see
+    orchestrator._prepare_turn — not degrade to a third, much weaker local
+    model silently answering in its place.
     """
     chain: list[_Provider] = []
     if settings.OPENROUTER_API_KEY:
@@ -149,9 +153,10 @@ def _build_provider_chain(timeout: float) -> list[_Provider]:
                                _GroqChatClient(api_key=settings.GROQ_API_KEY, timeout=timeout),
                                settings.GROQ_MODEL))
     if not chain:
-        chain.append(_Provider("ollama",
-                               ollama.Client(host=settings.OLLAMA_HOST, timeout=timeout),
-                               settings.OLLAMA_LLM_MODEL))
+        raise RuntimeError(
+            "No LLM reasoning provider configured — set OPENROUTER_API_KEY and/or "
+            "GROQ_API_KEY. Ollama is not a reasoning fallback (embeddings only)."
+        )
     logger.info(
         f"LLM provider chain (timeout={timeout}s): "
         + " -> ".join(f"{p.name}({p.model})" for p in chain)
@@ -206,11 +211,12 @@ def _usable_providers(chain: list[_Provider]) -> list[_Provider]:
 sync_providers = _build_provider_chain(settings.SYNC_LLM_TIMEOUT_S)
 async_providers = _build_provider_chain(settings.ASYNC_LLM_TIMEOUT_S)
 
-# Primary-provider aliases, kept for the Ollama-shaped call sites below
-# (call_llm_text) and any external caller that reaches for a bare client.
+# Primary-provider aliases, kept for call_llm_text below and any external
+# caller that reaches for a bare client. NOT Ollama — whichever of
+# OpenRouter/Groq is first in the chain (both expose the same .chat() shape).
 sync_llm_client = sync_providers[0].client
 async_llm_client = async_providers[0].client
-ollama_client = sync_llm_client
+primary_llm_client = sync_llm_client
 
 # Captured at import, before any eval script mutates settings.LLM_MODEL, so
 # an explicit override can be told apart from the value config.py derived
@@ -307,23 +313,9 @@ def stream_llm_text(system_prompt: str, user_prompt: str, stage: str = "unknown"
         model = pinned or provider.model
         emitted = False
         try:
-            if isinstance(provider.client, (_OpenRouterChatClient, _GroqChatClient)):
-                for chunk in provider.client.chat_stream(model=model, messages=messages, options=options, stage=stage):
-                    emitted = True
-                    yield chunk
-            else:
-                # Raw ollama.Client — no wrapper class, so handle its native stream shape directly.
-                for chunk in provider.client.chat(
-                    model=model,
-                    messages=messages,
-                    stream=True,
-                    keep_alive=settings.OLLAMA_KEEP_ALIVE,
-                    options={**options, "num_thread": settings.OLLAMA_NUM_THREAD, "num_ctx": settings.OLLAMA_NUM_CTX},
-                ):
-                    content = chunk.get("message", {}).get("content", "") if isinstance(chunk, dict) else chunk.message.content
-                    if content:
-                        emitted = True
-                        yield content
+            for chunk in provider.client.chat_stream(model=model, messages=messages, options=options, stage=stage):
+                emitted = True
+                yield chunk
             return
         except Exception as e:
             last_error = e
@@ -342,18 +334,20 @@ def stream_llm_text(system_prompt: str, user_prompt: str, stage: str = "unknown"
 
 def call_llm_text(system_prompt: str, user_prompt: str) -> Optional[str]:
     """
-    Call Ollama and return raw text output — used for free-form narrative
-    generation (e.g. AI summary) where JSON output is not needed.
-    Returns None on failure.
+    Call the primary reasoning provider (OpenRouter or Groq) and return raw
+    text output — used for free-form narrative generation (e.g. AI summary)
+    where JSON output is not needed. Returns None on failure.
     """
     try:
         # Scale context with prompt size (top_n can be up to 100 issues) —
         # a fixed window truncates the input on large lists, and the model
         # fills the gap by inventing issues that were cut off. ~4 chars/token.
+        # (num_ctx/num_thread below are Ollama-only tuning knobs, silently
+        # ignored by the OpenRouter/Groq client wrappers — see their classes.)
         est_tokens = len(system_prompt + user_prompt) // 3
         num_ctx = min(max(2048, est_tokens + 512), 8192)
 
-        response = ollama_client.chat(
+        response = primary_llm_client.chat(
             model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},

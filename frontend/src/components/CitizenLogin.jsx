@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Home, MessageSquareText, AlertTriangle } from 'lucide-react';
 import { login } from '../api/auth';
 
-export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToLeaderLogin }) {
+export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToLeaderLogin, onForgotPassword }) {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
@@ -96,7 +96,7 @@ export default function CitizenLogin({ onLoginSuccess, onBack, onSignup, onGoToL
           </form>
 
           <div className="mt-5 flex justify-between items-center">
-            <button className="text-blue-600 text-sm font-bold hover:underline">Forgot Password</button>
+            <button type="button" onClick={onForgotPassword} className="text-blue-600 text-sm font-bold hover:underline">Forgot Password</button>
             {onGoToLeaderLogin && (
               <button type="button" onClick={onGoToLeaderLogin} className="text-gray-500 text-xs hover:underline">
                 Are you a leader? Login here

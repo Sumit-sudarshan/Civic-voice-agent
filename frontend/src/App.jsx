@@ -8,6 +8,8 @@ import CitizenLogin from './components/CitizenLogin';
 import LeaderLogin from './components/LeaderLogin';
 import SignupPage from './pages/SignupPage';
 import LeaderSignupPage from './pages/LeaderSignupPage';
+import ForgotPasswordPage from './components/ForgotPasswordPage';
+import ResetPasswordPage from './components/ResetPasswordPage';
 import { getMe, logout as apiLogout } from './api/auth';
 
 // Code-split the leader dashboard and the internal eval console out of the
@@ -57,9 +59,10 @@ function App() {
   // lives server-side in the cookie, never localStorage).
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null); // null = logged out; else {id,email,role,first_name,last_name,phone}
-  const [citizenView, setCitizenView] = useState('landing'); // 'landing' | 'login' | 'signup'
-  const [leaderView, setLeaderView] = useState('landing'); // 'landing' | 'login' | 'signup'
+  const [citizenView, setCitizenView] = useState('landing'); // 'landing' | 'login' | 'signup' | 'forgot'
+  const [leaderView, setLeaderView] = useState('landing'); // 'landing' | 'login' | 'signup' | 'forgot'
   const [confirmedRole, setConfirmedRole] = useState(null); // set when this load is a Supabase signup-confirmation redirect
+  const [recovery, setRecovery] = useState(null); // {accessToken, role} — set when this load is a Supabase password-recovery redirect
 
   useEffect(() => {
     if (window.location.pathname.startsWith('/dashboard')) {
@@ -79,6 +82,16 @@ function App() {
       window.history.replaceState({}, '', window.location.pathname || '/');
       setConfirmedRole(role);
       if (role === 'leader') setLeaderView('login'); else setCitizenView('login');
+    } else if (hash.includes('access_token') && hash.includes('type=recovery')) {
+      // Same fragment-based redirect mechanism as the signup-confirmation
+      // case above, but this token is a real credential capable of setting a
+      // new password (via PUT /auth/v1/user), so it's held in state — never
+      // re-derived from the URL — until the reset form actually submits it.
+      const params = new URLSearchParams(hash.slice(1));
+      const accessToken = params.get('access_token') || '';
+      const role = decodeSupabaseRole(accessToken);
+      window.history.replaceState({}, '', window.location.pathname || '/');
+      setRecovery({ accessToken, role });
     }
 
     getMe().then(setUser).catch(() => setUser(null)).finally(() => setAuthLoading(false));
@@ -128,6 +141,31 @@ function App() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Just arrived here via a Supabase password-recovery redirect — show the
+  // "set new password" form instead of falling through to a login screen
+  // with an unused (and sensitive) recovery token sitting in state unused.
+  if (recovery) {
+    const isLeader = recovery.role === 'leader';
+    return (
+      <ResetPasswordPage
+        variant={isLeader ? 'leader' : 'citizen'}
+        accessToken={recovery.accessToken}
+        onDone={() => {
+          setRecovery(null);
+          if (isLeader) {
+            setLeaderView('login');
+            setIsDashboard(true);
+            window.history.pushState({}, '', '/dashboard');
+          } else {
+            setCitizenView('login');
+            setIsDashboard(false);
+            window.history.pushState({}, '', '/');
+          }
+        }}
+      />
     );
   }
 
@@ -194,12 +232,20 @@ function App() {
                         onSignup={() => setLeaderView('signup')}
                         onGoToCitizenLogin={goToCitizenHome}
                         onLoginSuccess={(u) => setUser(u)}
+                        onForgotPassword={() => setLeaderView('forgot')}
                       />
                     );
                   case 'signup':
                     return (
                       <LeaderSignupPage
                         onGoToLogin={() => setLeaderView('login')}
+                      />
+                    );
+                  case 'forgot':
+                    return (
+                      <ForgotPasswordPage
+                        variant="leader"
+                        onBack={() => setLeaderView('login')}
                       />
                     );
                   case 'landing':
@@ -229,10 +275,18 @@ function App() {
                         onBack={() => setCitizenView('landing')}
                         onSignup={() => setCitizenView('signup')}
                         onGoToLeaderLogin={goToDashboard}
+                        onForgotPassword={() => setCitizenView('forgot')}
                       />
                     );
                   case 'signup':
                     return <SignupPage onBack={() => setCitizenView('landing')} onGoToLogin={() => setCitizenView('login')} />;
+                  case 'forgot':
+                    return (
+                      <ForgotPasswordPage
+                        variant="citizen"
+                        onBack={() => setCitizenView('login')}
+                      />
+                    );
                   case 'landing':
                   default:
                     return (

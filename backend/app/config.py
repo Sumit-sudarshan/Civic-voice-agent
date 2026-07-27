@@ -8,19 +8,23 @@ class Settings(BaseSettings):
     # rate-limits hands off to the next rather than failing the call:
     #   OPENROUTER_API_KEY set -> OpenRouter (OPENROUTER_MODEL)   <- primary
     #   GROQ_API_KEY set       -> Groq (GROQ_MODEL)               <- failover
-    #   neither set            -> Ollama (OLLAMA_LLM_MODEL)
+    # At least one of the two MUST be set — llm/client.py raises at import
+    # time otherwise. Ollama is NOT a reasoning fallback (by design): if both
+    # providers fail on a live turn, the citizen sees an explicit
+    # "service unavailable" outcome (orchestrator._prepare_turn) rather than a
+    # third, much weaker local model silently answering in their place.
     # Setting both is the recommended configuration: OpenRouter's free tier
     # 429s frequently, and Groq's independent free-tier quota keeps the app
     # working through it. LLM_MODEL below always tracks the PRIMARY provider.
-    # Embeddings are ALWAYS local Ollama (EMBEDDING_MODEL). By design the dedup
-    # vectors are derived from PII-bearing complaint text, so that text never
-    # leaves the VM — it is not routed through any hosted API regardless of the
-    # reasoning backend. See MVP_Design.md §3.1.
+    # Embeddings are ALWAYS local Ollama (EMBEDDING_MODEL) — a separate,
+    # unrelated use of Ollama. By design the dedup vectors are derived from
+    # PII-bearing complaint text, so that text never leaves the VM — it is
+    # not routed through any hosted API regardless of the reasoning backend.
+    # See MVP_Design.md §3.1.
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.1-8b-instant"
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
-    OLLAMA_LLM_MODEL: str = "qwen2.5:1.5b"
     EMBEDDING_MODEL: str = "nomic-embed-text"
 
     # --- Database ---
@@ -103,6 +107,10 @@ class Settings(BaseSettings):
         elif self.GROQ_API_KEY:
             self.LLM_MODEL = self.GROQ_MODEL
         else:
-            self.LLM_MODEL = self.OLLAMA_LLM_MODEL
+            # No reasoning provider configured — llm/client.py raises at
+            # import time in this case; left empty rather than pointing at a
+            # model name that no longer means anything (Ollama isn't a
+            # reasoning fallback anymore).
+            self.LLM_MODEL = ""
 
 settings = Settings()

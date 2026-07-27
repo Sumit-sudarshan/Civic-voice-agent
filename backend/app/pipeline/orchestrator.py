@@ -13,7 +13,6 @@ from app.pipeline.stages import (
     run_dialogue_manager, run_reply_composer, stream_reply_composer,
 )
 from app.pipeline.dedup import embed, find_duplicate, find_reopened, merge_complaint
-from app.pipeline.fallback_dialogue import build_fallback_dialogue_state
 from app.pipeline.language import detect_language
 from app.pipeline.translation import translate_to_english
 from app.pipeline.dialogue_templates import get_template
@@ -360,6 +359,20 @@ def _build_transcript_blob(history: List[ChatTurnRecord], new_message_english: s
 
 _HARD_REJECT_LABELS = {"spam_or_gibberish", "off_topic", "abusive_or_harmful", "personal_emergency"}
 
+# Shown when every configured LLM provider (OpenRouter, then Groq) has failed
+# or is rate-limited on this turn — an honest error, not a heuristic guess at
+# what to ask next (see _prepare_turn/process_turn/stream_turn_reply below).
+_SERVICE_UNAVAILABLE_MESSAGE = "Server down, try again later."
+
+
+def _service_unavailable(detected_lang: str, new_message_english: str) -> ChatTurnResponse:
+    return ChatTurnResponse(
+        kind="service_unavailable",
+        detected_language=detected_lang,
+        new_message_english=new_message_english,
+        service_unavailable_message=_SERVICE_UNAVAILABLE_MESSAGE,
+    )
+
 
 def _insert_rejected(raw_text: str, review_reason: str, citizen_name: str, citizen_phone: str,
                       citizen_last_name: Optional[str], session: Session,
@@ -511,10 +524,9 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
             gk = None
 
         if gk is None:
-            # LLM failure — degrade to asking for clarification rather than
-            # crashing the conversation or silently accepting.
-            vagueness_mode = True
-            submission_type = None
+            # Both providers exhausted (call_llm walks the whole chain before
+            # returning None) — an honest "try again later", not a guess.
+            return _service_unavailable(detected_lang, new_message_english)
         elif gk.label in _HARD_REJECT_LABELS:
             row_id = _insert_rejected(
                 new_message_english, gk.label,
@@ -549,13 +561,9 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
         dialogue_state = None
 
     if dialogue_state is None:
-        # Graceful fallback — read the transcript directly rather than
-        # assuming nothing is known (see fallback_dialogue.py's docstring:
-        # the prior blind DialogueState(issue_clear=False) default asked
-        # "describe the issue in more detail" even when the citizen had
-        # already written several detailed sentences, purely because the LLM
-        # call failed).
-        dialogue_state = build_fallback_dialogue_state(transcript_blob)
+        # Both providers exhausted on this call too — same honest stop as
+        # the turn-1 gatekeeper case above, rather than a heuristic guess.
+        return _service_unavailable(detected_lang, new_message_english)
 
     next_action = decide_next_action(dialogue_state, payload.history, vagueness_mode,
                                       known_pincode=payload.citizen_pincode)
@@ -698,13 +706,9 @@ def process_turn(payload: ChatMessageRequest, session: Session, background_tasks
     if composed:
         question_en, question_localized = composed.reply_english, composed.reply_localized
     else:
-        # Graceful fallback — static template, never crash the turn on a
-        # single bad LLM response. Seeded on the transcript so the English
-        # and localized picks below land on the same one of the 5 phrasings
-        # (see dialogue_templates.get_template's docstring), and so repeated
-        # fallbacks across different conversations don't all read identically.
-        question_en = get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
-        question_localized = get_template(pq.question_key, pq.detected_lang, variation_seed=pq.transcript_blob)
+        # Both providers exhausted on the reply-composer call — honest stop,
+        # same as the earlier gatekeeper/dialogue-manager checks.
+        return _service_unavailable(pq.detected_lang, pq.new_message_english)
 
     return _question_response(pq, question_en, question_localized)
 
@@ -739,10 +743,9 @@ def stream_turn_reply(payload: ChatMessageRequest, session: Session, background_
             composed = None
         if composed:
             question_en, question_localized = composed.reply_english, composed.reply_localized
+            yield f"event: final\ndata: {_question_response(pq, question_en, question_localized).model_dump_json()}\n\n"
         else:
-            question_en = get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
-            question_localized = get_template(pq.question_key, pq.detected_lang, variation_seed=pq.transcript_blob)
-        yield f"event: final\ndata: {_question_response(pq, question_en, question_localized).model_dump_json()}\n\n"
+            yield f"event: final\ndata: {_service_unavailable(pq.detected_lang, pq.new_message_english).model_dump_json()}\n\n"
         return
 
     full_text = ""
@@ -753,12 +756,16 @@ def stream_turn_reply(payload: ChatMessageRequest, session: Session, background_
     except Exception as e:
         logger.error(f"Streaming reply composer exception: {e}")
 
-    # Nothing streamed successfully (immediate failure) -> static template.
-    # Partial text (failed partway through) is used as-is rather than
-    # discarded — better than nothing, and a full retry can't resume a
-    # stream cleanly mid-sentence.
-    final_text = full_text.strip() or get_template(pq.question_key, "en", variation_seed=pq.transcript_blob)
-    yield f"event: final\ndata: {_question_response(pq, final_text, final_text).model_dump_json()}\n\n"
+    # Partial text (failed partway through, after emitting something) is used
+    # as-is rather than discarded — better than nothing, and a retry can't
+    # resume a stream cleanly mid-sentence. Nothing streamed at all means
+    # every provider failed before emitting a single chunk — an honest stop,
+    # not a static template standing in for the LLM's answer.
+    if full_text.strip():
+        final_text = full_text.strip()
+        yield f"event: final\ndata: {_question_response(pq, final_text, final_text).model_dump_json()}\n\n"
+    else:
+        yield f"event: final\ndata: {_service_unavailable(pq.detected_lang, pq.new_message_english).model_dump_json()}\n\n"
 
 
 def _run_finalize_and_update(
