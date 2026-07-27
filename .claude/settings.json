@@ -20,7 +20,10 @@
       "Bash(python -m pytest tests/test_connection_pool.py -v)",
       "Bash(gh run *)",
       "Bash(gcloud billing *)",
-      "Bash(python -m pytest -q)"
+      "Bash(python -m pytest -q)",
+      "Bash(python -m pytest -q --no-header)",
+      "Bash(python -c \"import fastapi, starlette, sqlalchemy; print\\('fastapi',fastapi.__version__\\); print\\('starlette',starlette.__version__\\); print\\('sa',sqlalchemy.__version__\\)\")",
+      "Bash(python -m pytest tests/test_api.py tests/test_phase8_security.py tests/test_connection_pool.py tests/test_routing_and_signup.py tests/test_observability.py -q --no-header)"
     ]
   }
 }

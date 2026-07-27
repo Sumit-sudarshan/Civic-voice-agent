@@ -52,6 +52,19 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def _signup_message(body: dict) -> str:
+    """
+    The "check your email" copy is only true when the project requires email
+    confirmation. With Supabase's "Confirm email" toggle off, /signup returns
+    a live session instead and the account is usable immediately — telling
+    that user to go find a confirmation email that will never arrive is a
+    dead end, so the message follows the actual response shape.
+    """
+    if body.get("access_token"):
+        return "Account created. You can log in now."
+    return "Account created. Check your email to confirm it before logging in."
+
+
 def _supabase_error_detail(resp: httpx.Response) -> str:
     try:
         body = resp.json()
@@ -80,7 +93,7 @@ def citizen_signup(payload: CitizenSignupRequest):
     resp = httpx.post(f"{_SUPABASE_AUTH_URL}/signup", headers=_AUTH_HEADERS, json=body, timeout=20)
     if resp.status_code >= 400:
         raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
-    return {"message": "Account created. Check your email to confirm it before logging in."}
+    return {"message": _signup_message(resp.json())}
 
 
 @router.post("/leader/signup", status_code=201)
@@ -98,7 +111,19 @@ def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_s
     if resp.status_code >= 400:
         raise HTTPException(status_code=400, detail=_supabase_error_detail(resp))
 
-    auth_user_id = resp.json()["id"]
+    # GoTrue's /signup returns two different shapes depending on the project's
+    # "Confirm email" setting: the bare User object when confirmation is
+    # required, but a full session envelope ({access_token, ..., user: {...}})
+    # when it is turned off. Reading only the top-level "id" raised KeyError ->
+    # 500 in the latter case, and — worse — the Supabase account would already
+    # exist while the `leader` row never got written, leaving an account that
+    # can log in but 403s on every leader route. Handle both shapes.
+    signup_body = resp.json()
+    auth_user_id = signup_body.get("id") or (signup_body.get("user") or {}).get("id")
+    if not auth_user_id:
+        logger.error(f"Unexpected Supabase signup response shape: {list(signup_body.keys())}")
+        raise HTTPException(status_code=502, detail="Signup succeeded but the account could not be linked. Contact support.")
+
     leader = Leader(
         auth_user_id=auth_user_id,
         name=payload.name,
@@ -109,7 +134,7 @@ def leader_signup(payload: LeaderSignupRequest, session: Session = Depends(get_s
     )
     session.add(leader)
     session.commit()
-    return {"message": "Account created. Check your email to confirm it before logging in."}
+    return {"message": _signup_message(signup_body)}
 
 
 @router.post("/login")

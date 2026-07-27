@@ -136,6 +136,16 @@ export default function ChatIntake({ onClose, user }) {
 
   const rejection = outcome?.kind === 'rejected' ? getRejectionMessage(outcome.reason) : null;
 
+  // FR9 — the concerned person is what routes a submission to a leader's
+  // dashboard (every leader-facing query filters on concerned_leader_id).
+  // It used to be labelled "optional" and nothing enforced it, so the default
+  // path — start typing without touching the city/pincode fields — produced
+  // complaints with no leader assigned, which no dashboard would ever show:
+  // the citizen got a "Submitted Successfully" confirmation for a submission
+  // that had, in practice, gone nowhere. It's required before the first
+  // message now, and stays editable for the rest of the conversation.
+  const needsLeader = !concernedLeaderId;
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-xl rounded-lg shadow-2xl border border-gray-200 relative overflow-hidden max-h-[90vh] flex flex-col">
@@ -162,13 +172,22 @@ export default function ChatIntake({ onClose, user }) {
             />
             <select
               value={concernedLeaderId} onChange={(e) => setConcernedLeaderId(e.target.value)}
-              className="flex-1 min-w-[140px] border border-gray-300 rounded-full px-3 py-1 text-xs text-black bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className={`flex-1 min-w-[140px] border rounded-full px-3 py-1 text-xs text-black bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                needsLeader ? 'border-amber-400' : 'border-gray-300'
+              }`}
             >
-              <option value="">Concerned person (optional)</option>
+              <option value="">Concerned person (required)</option>
               {leaders.map((l) => (
                 <option key={l.id} value={l.id}>{l.name} — {l.city}, {l.pincode}</option>
               ))}
             </select>
+            {needsLeader && (
+              <p className="w-full text-[10px] text-amber-700">
+                {leaders.length === 0
+                  ? 'Enter your city (and pincode, if you know it) to find the person responsible for your area.'
+                  : 'Choose the concerned person so your submission reaches the right leader.'}
+              </p>
+            )}
           </div>
         )}
 
@@ -255,13 +274,17 @@ export default function ChatIntake({ onClose, user }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                disabled={sending || !!outcome}
-                placeholder={outcome ? 'This conversation has ended.' : 'Type your message...'}
+                disabled={sending || !!outcome || needsLeader}
+                placeholder={
+                  outcome ? 'This conversation has ended.'
+                    : needsLeader ? 'Select a concerned person above to start…'
+                    : 'Type your message...'
+                }
                 className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-full bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={sending || !!outcome || !input.trim()}
+                disabled={sending || !!outcome || needsLeader || !input.trim()}
                 className="w-9 h-9 rounded-full bg-[#0e75c6] text-white flex items-center justify-center shrink-0 hover:bg-[#054483] disabled:opacity-40 transition-colors"
               >
                 <Send className="w-4 h-4" />

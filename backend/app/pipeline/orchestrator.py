@@ -7,7 +7,7 @@ from typing import Iterator, List, Literal, Optional
 from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select
 from app.models.schemas import ComplaintInternal, ChatMessageRequest, ChatTurnRecord, ChatTurnResponse, LocationSlotsOut
-from app.models.db_models import Complaint, Status, SubmissionType, PipelineStatus
+from app.models.db_models import Complaint, Leader, Status, SubmissionType, PipelineStatus
 from app.pipeline.stages import (
     run_gatekeeper, run_classifier, run_urgency_scorer, run_extractor,
     run_dialogue_manager, run_reply_composer, stream_reply_composer,
@@ -439,6 +439,22 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
             rate_limit_message=rate_limit_message,
         )
 
+    # `concerned_leader_id` comes from the request body (the FR9 dropdown), and
+    # `complaint.concerned_leader_id` is a real FK to `leader.id` — so a stale
+    # or tampered id would only fail at INSERT time, several LLM calls later,
+    # as an IntegrityError that surfaces to the citizen as a 500 and throws
+    # away the entire conversation. Verified up front instead: an unknown id is
+    # dropped (the submission is still recorded — NFR7's "never silently
+    # dropped" — just unrouted) and logged loudly, since the only realistic
+    # cause is a deleted leader row or a hand-crafted request.
+    if payload.concerned_leader_id is not None:
+        if session.get(Leader, payload.concerned_leader_id) is None:
+            logger.warning(
+                f"Unknown concerned_leader_id={payload.concerned_leader_id} on intake turn; "
+                "recording the submission without a leader assignment"
+            )
+            payload.concerned_leader_id = None
+
     # Phase 9 load test finding: SQLAlchemy keeps a Session's connection
     # checked out from the pool for the whole transaction it auto-began on
     # check_rate_limit's SELECT above — including however long the LLM calls
@@ -575,6 +591,14 @@ def _prepare_turn(payload: ChatMessageRequest, session: Session, background_task
         created_at=now,
         updated_at=now,
     )
+    if payload.concerned_leader_id is None:
+        # Every leader-facing query filters on concerned_leader_id, so an
+        # unassigned row is accepted and stored but will not appear on any
+        # dashboard. The UI requires a selection (FR9), so reaching here means
+        # a direct API call or a stale client — worth surfacing in Cloud
+        # Logging rather than letting the submission quietly go nowhere.
+        logger.warning(f"[id={stub_id}] Submission accepted with no concerned_leader_id — it will not appear on any leader dashboard")
+
     session.add(stub)
     session.commit()
     session.refresh(stub)

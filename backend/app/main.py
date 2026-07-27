@@ -26,12 +26,37 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Civic Voice Agent", lifespan=lifespan)
 
-# Allow frontend to call the API. ALLOWED_ORIGINS defaults to "*" for local
-# dev; set it to the deployed frontend's exact origin(s) in production.
-_origins = settings.ALLOWED_ORIGINS.split(",") if settings.ALLOWED_ORIGINS != "*" else ["*"]
+# Allow the frontend to call the API.
+#
+# `allow_origins=["*"]` together with `allow_credentials=True` is not the
+# no-op it looks like: Starlette echoes the caller's own Origin back (it must,
+# since browsers reject a literal "*" on credentialed responses), so *any*
+# site could have made credentialed cross-origin calls with the session
+# cookie. That was only ever mitigated by the cookie's SameSite=Lax. In
+# production the frontend and API are same-origin behind the same Nginx, so
+# nothing legitimate needs the wildcard.
+#
+# Default is now: explicit localhost dev origins, plus a regex for the
+# project's ephemeral Cloudflare quick-tunnel hostnames (which change on every
+# `cloudflared` restart by design — see MVP_Design.md §3.1 — so pinning one
+# exact URL here would mean a code change after every tunnel restart).
+# ALLOWED_ORIGINS still overrides both when set explicitly.
+_DEV_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:4173", "http://127.0.0.1:4173",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+]
+if settings.ALLOWED_ORIGINS and settings.ALLOWED_ORIGINS != "*":
+    _origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+    _origin_regex = None
+else:
+    _origins = _DEV_ORIGINS
+    _origin_regex = r"https://[a-z0-9-]+\.trycloudflare\.com"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,7 +72,7 @@ app.include_router(auth_api.router)
 app.include_router(leaders_api.router)
 
 @app.get("/health")
-async def health_check(session: Session = Depends(get_session)):
+def health_check(session: Session = Depends(get_session)):
     """
     Doubles as Phase 7's Supabase keep-alive target (GitHub Actions cron
     pings this on a schedule to defeat Supabase's 7-day inactivity pause) —
@@ -57,6 +82,13 @@ async def health_check(session: Session = Depends(get_session)):
     surfaced as a non-200, since CI's post-deploy smoke check and the GCP
     uptime check both key off this endpoint staying up through transient DB
     blips that aren't really "the app is down."
+
+    Deliberately a plain `def`, not `async def`: `session.exec()` is a
+    blocking network round-trip to Supabase, and an `async def` endpoint runs
+    directly on the event loop — a slow or hung DB would have stalled every
+    other in-flight request on this single-worker VM for up to the pool's
+    30s checkout timeout. As a sync endpoint FastAPI runs it in the
+    threadpool, so a stuck health check can't take the app down with it.
     """
     db_ok = True
     try:

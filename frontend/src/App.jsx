@@ -1,18 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import LandingPage from './components/LandingPage';
+import LeaderLandingPage from './components/LeaderLandingPage';
 import CitizenDashboard from './components/CitizenDashboard';
 import CitizenLogin from './components/CitizenLogin';
 import LeaderLogin from './components/LeaderLogin';
 import SignupPage from './pages/SignupPage';
 import LeaderSignupPage from './pages/LeaderSignupPage';
-import Home from './pages/Home';
-import Suggestions from './pages/Suggestions';
-import Statistics from './pages/Statistics';
-import Archive from './pages/Archive';
-import Settings from './pages/Settings';
-import EvalConsole from './pages/EvalConsole';
 import { getMe, logout as apiLogout } from './api/auth';
+
+// Code-split the leader dashboard and the internal eval console out of the
+// initial bundle. Everything below is reachable only after a leader logs in
+// (or via the unlinked /internal-eval URL), while the bundle's single biggest
+// dependency — recharts, pulled in by Statistics — was being shipped to every
+// citizen who just wanted to file a complaint. Vite had warned about the
+// >500 kB chunk on every build since the project started.
+const Home = lazy(() => import('./pages/Home'));
+const Suggestions = lazy(() => import('./pages/Suggestions'));
+const Statistics = lazy(() => import('./pages/Statistics'));
+const Archive = lazy(() => import('./pages/Archive'));
+const Settings = lazy(() => import('./pages/Settings'));
+const EvalConsole = lazy(() => import('./pages/EvalConsole'));
+
+const PageFallback = () => (
+  <div className="h-full flex items-center justify-center text-sm text-gray-500">Loading…</div>
+);
 
 function App() {
   const [currentPath, setCurrentPath] = useState('home');
@@ -23,7 +35,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null); // null = logged out; else {id,email,role,first_name,last_name,phone}
   const [citizenView, setCitizenView] = useState('landing'); // 'landing' | 'login' | 'signup'
-  const [leaderView, setLeaderView] = useState('login'); // 'login' | 'signup'
+  const [leaderView, setLeaderView] = useState('landing'); // 'landing' | 'login' | 'signup'
 
   useEffect(() => {
     if (window.location.pathname.startsWith('/dashboard')) {
@@ -40,7 +52,7 @@ function App() {
   // link in the citizen or leader UI, only by knowing the exact URL. Kept
   // after all hooks above so hook call order stays unconditional per render.
   if (window.location.pathname.startsWith('/internal-eval')) {
-    return <EvalConsole />;
+    return <Suspense fallback={<PageFallback />}><EvalConsole /></Suspense>;
   }
 
   // Update URL without full reload when navigating within dashboard
@@ -53,7 +65,7 @@ function App() {
     try { await apiLogout(); } catch { /* cookie may already be gone — clear local state regardless */ }
     setUser(null);
     setCitizenView('landing');
-    setLeaderView('login');
+    setLeaderView('landing');
   };
 
   const renderPage = () => {
@@ -93,21 +105,38 @@ function App() {
                 onLogout={handleLogout}
               />
               <main className="flex-1 overflow-y-auto relative z-10 w-full bg-[#fafafa]">
-                {renderPage()}
+                <Suspense fallback={<PageFallback />}>{renderPage()}</Suspense>
               </main>
             </>
           ) : (
             <div className="flex-1 overflow-y-auto w-full">
-              {leaderView === 'signup' ? (
-                <LeaderSignupPage onBack={goToCitizenHome} onGoToLogin={() => setLeaderView('login')} />
-              ) : (
-                <LeaderLogin
-                  onBack={goToCitizenHome}
-                  onSignup={() => setLeaderView('signup')}
-                  onGoToCitizenLogin={goToCitizenHome}
-                  onLoginSuccess={(u) => setUser(u)}
-                />
-              )}
+              {(() => {
+                switch (leaderView) {
+                  case 'login':
+                    return (
+                      <LeaderLogin
+                        onSignup={() => setLeaderView('signup')}
+                        onGoToCitizenLogin={goToCitizenHome}
+                        onLoginSuccess={(u) => setUser(u)}
+                      />
+                    );
+                  case 'signup':
+                    return (
+                      <LeaderSignupPage
+                        onGoToLogin={() => setLeaderView('login')}
+                      />
+                    );
+                  case 'landing':
+                  default:
+                    return (
+                      <LeaderLandingPage
+                        onLogin={() => setLeaderView('login')}
+                        onSignup={() => setLeaderView('signup')}
+                        onGoToCitizenPortal={goToCitizenHome}
+                      />
+                    );
+                }
+              })()}
             </div>
           )
         ) : (

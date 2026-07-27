@@ -7,7 +7,7 @@ const initialForm = {
   password: '', confirmPassword: '',
 };
 
-export default function LeaderSignupPage({ onBack, onGoToLogin }) {
+export default function LeaderSignupPage({ onGoToLogin }) {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -49,7 +49,7 @@ export default function LeaderSignupPage({ onBack, onGoToLogin }) {
     <div className="min-h-full flex flex-col font-sans bg-[#eef6ee]">
       {/* Logo header */}
       <div className="bg-white px-4 sm:px-8 py-2 flex justify-between items-center border-b border-gray-200 shadow-sm">
-        <div className="flex items-center gap-4 cursor-pointer" onClick={onBack}>
+        <div className="flex items-center gap-4">
           <div className="h-9 w-9 rounded-lg bg-[#1c7a3c] flex items-center justify-center shrink-0">
             <ShieldCheck className="w-5 h-5 text-white" />
           </div>
@@ -59,9 +59,10 @@ export default function LeaderSignupPage({ onBack, onGoToLogin }) {
         </div>
       </div>
 
-      {/* Nav */}
+      {/* Nav — brand mark only, not a navigation control; only the buttons
+          below and the "Already registered? Log in" link navigate anywhere. */}
       <div className="bg-[#1c7a3c] text-white px-4 sm:px-8 flex items-center gap-6 text-sm font-semibold shadow-md">
-        <button onClick={onBack} className="py-3 px-2 hover:bg-[#25963f] transition-colors"><Home className="w-5 h-5" /></button>
+        <span className="py-3 px-2"><Home className="w-5 h-5" /></span>
         <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Your Ward Dashboard</button>
         <button className="py-3 px-2 hover:bg-[#25963f] transition-colors hidden sm:block text-white">Contact Support</button>
       </div>
