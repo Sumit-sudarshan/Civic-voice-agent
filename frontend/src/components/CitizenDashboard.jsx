@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Home, LogOut, FileText, AlertTriangle, Clock, RefreshCw, MessageSquareText, ChevronDown, ChevronUp } from 'lucide-react';
-import { fetchSubmissionStatus } from '../api/client';
+import { fetchSubmissionStatus, fetchMyComplaints } from '../api/client';
 import { getRejectionMessage } from '../api/rejectionMessages';
 import { getTrackedSubmissions, removeTrackedSubmissions, hasFeedback, markFeedbackGiven } from '../api/trackedSubmissions';
 import ChatIntake from './ChatIntake';
@@ -49,10 +49,31 @@ function SubmissionTracker({ user, type }) {
   };
 
   useEffect(() => {
-    const filtered = getTrackedSubmissions(user).filter(t => t.type === type);
-    setTracked(filtered);
-    if (filtered.length === 0) { setLoading(false); return; }
-    loadStatuses(filtered);
+    let cancelled = false;
+
+    (async () => {
+      const local = getTrackedSubmissions(user).filter(t => t.type === type);
+      // FR6 — merge in the server's own record of this citizen's submissions
+      // (scoped by their verified session, not this browser's localStorage),
+      // so history survives a new device or a cleared browser. Best-effort:
+      // a fetch failure just falls back to whatever localStorage already had.
+      let merged = local;
+      try {
+        const mine = await fetchMyComplaints();
+        const knownIds = new Set(local.map((t) => t.id));
+        const fromServer = mine
+          .filter((c) => c.submission_type === type && !knownIds.has(c.id))
+          .map((c) => ({ id: c.id, type: c.submission_type, preview: c.raw_text?.slice(0, 140), created_at: c.created_at }));
+        merged = [...local, ...fromServer].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      } catch { /* localStorage-only fallback is fine */ }
+
+      if (cancelled) return;
+      setTracked(merged);
+      if (merged.length === 0) { setLoading(false); return; }
+      loadStatuses(merged);
+    })();
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, type]);
 

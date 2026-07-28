@@ -107,6 +107,15 @@ export async function revealPhone(id) {
   return res.json();
 }
 
+// FR6 — the citizen's own submissions, scoped server-side by their verified
+// session (owner_user_id), so history survives a new device or a cleared
+// browser instead of relying only on the localStorage tracker.
+export async function fetchMyComplaints() {
+  const res = await fetch(`${API_BASE}/complaints/mine`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch your submissions');
+  return res.json();
+}
+
 export async function fetchSubmissionStatus(type, id) {
   const endpoint = type === 'complaint' ? 'complaints' : 'suggestions';
   const res = await fetch(`${API_BASE}/${endpoint}/${id}`);

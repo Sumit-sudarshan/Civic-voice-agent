@@ -139,16 +139,22 @@ def test_decide_next_action_accepts_genuine_distinct_area_and_pincode():
     assert action.location_pincode == "400021"
 
 
-def test_decide_next_action_stops_asking_after_area_attempts_exhausted():
-    """A genuinely unresolved area must give up after MAX_AREA_ATTEMPTS — and
-    since area is required, that give-up is a hard stop (cannot_proceed), never
-    an endless loop and never a silent submission with a missing area."""
+def test_decide_next_action_proceeds_after_area_attempts_exhausted():
+    """
+    Regression test for a real user-reported failure: a fully actionable
+    complaint was DISCARDED ("Can't Proceed With This Request") purely because
+    the citizen never produced a separate "broader area" name — something many
+    small towns and standalone localities genuinely do not have.
+
+    Running out of area attempts must now proceed with the locality the
+    citizen did give, never reject the submission.
+    """
     from app.models.schemas import ChatTurnRecord
     from app.pipeline.orchestrator import MAX_AREA_ATTEMPTS
 
     state = DialogueState(
         location_address="Rajiv Nagar", address_specific_enough=True,
-        location_area=None, location_pincode=None, pincode_declined=False, issue_clear=True,
+        location_area=None, location_pincode="411001", pincode_declined=False, issue_clear=True,
     )
     history = [
         ChatTurnRecord(speaker="citizen", english_text="..."),
@@ -161,5 +167,45 @@ def test_decide_next_action_stops_asking_after_area_attempts_exhausted():
         history.append(ChatTurnRecord(speaker="citizen", english_text="I don't know"))
 
     action = decide_next_action(state, history=history, vagueness_mode=False)
-    assert action.kind == "cannot_proceed"
-    assert action.giveup_reason == "area_missing"
+    assert action.kind == "ready", "an answerable complaint must never be thrown away over a missing area label"
+    assert action.location_area == "Rajiv Nagar", "falls back to the locality the citizen actually gave"
+
+
+def test_citizen_asserting_locality_is_the_area_is_accepted_immediately():
+    """
+    The exact reported conversation: citizen names their locality, then says
+    "Area is same as Shriram nagar". That is a complete answer — it must be
+    honoured on the spot, not met with another "which broader area?" question.
+    """
+    from app.models.schemas import ChatTurnRecord
+
+    state = DialogueState(
+        location_address="Shriram Nagar Karegaon Road", address_specific_enough=True,
+        location_area=None, area_same_as_address=True,
+        location_pincode="431401", pincode_declined=False, issue_clear=True,
+    )
+    history = [
+        ChatTurnRecord(speaker="citizen", english_text="Daily power cuts of 2-3 hours"),
+        ChatTurnRecord(speaker="bot", english_text="...", question_key="ask_address"),
+        ChatTurnRecord(speaker="citizen", english_text="Shriram nagar karegaon road parbhani"),
+        ChatTurnRecord(speaker="bot", english_text="...", question_key="ask_area"),
+        ChatTurnRecord(speaker="citizen", english_text="Area is same as Shriram nagar"),
+    ]
+
+    action = decide_next_action(state, history=history, vagueness_mode=False)
+    assert action.kind == "ready", "the citizen answered; asking again reads as the system not listening"
+    assert action.location_area == "Shriram Nagar Karegaon Road"
+
+
+def test_area_assertion_is_ignored_when_no_usable_locality_was_given():
+    """
+    The assertion escape hatch must not become a way to skip location entirely
+    — "that's all I know" with no findable place named is still unresolved.
+    """
+    state = DialogueState(
+        location_address=None, address_specific_enough=False,
+        location_area=None, area_same_as_address=True,
+        location_pincode="411001", pincode_declined=False, issue_clear=True,
+    )
+    action = decide_next_action(state, history=[], vagueness_mode=False)
+    assert action.kind == "ask_address"

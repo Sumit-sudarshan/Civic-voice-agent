@@ -7,7 +7,7 @@ import uuid
 from app.db.session import get_session
 from app.models.schemas import ComplaintOut, ExtractionFeedbackIn
 from app.models.db_models import Complaint, ExtractionFeedback, Leader, PhoneRevealLog, Status, Category, UrgencyLevel, SubmissionType
-from app.auth.deps import get_current_leader, get_optional_current_leader
+from app.auth.deps import get_current_leader, get_optional_current_leader, get_current_user, CurrentUser
 from app.utils.validators import mask_phone
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
@@ -110,6 +110,29 @@ def get_complaints(
         statement = statement.where(Complaint.created_at <= date_to)
 
     return [_masked(c) for c in session.exec(statement).all()]
+
+
+@router.get("/mine", response_model=List[ComplaintOut])
+def get_my_complaints(
+    session: Session = Depends(get_session),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    FR6 — a citizen's own submissions (complaints AND suggestions), scoped by
+    the verified `owner_user_id` from their session, not a client-supplied
+    value. Closes the standing gap noted since Phase 3: `owner_user_id` was
+    recorded on every submission from day one, but no endpoint ever read it
+    back — the frontend instead relied on a per-browser localStorage tracker
+    (still present, unaffected), which loses a citizen's history on a new
+    device or a cleared browser. Unmasked (it's the citizen's own phone
+    number), same as the existing single-id lookup below.
+    """
+    statement = (
+        select(Complaint)
+        .where(Complaint.owner_user_id == current_user.id)
+        .order_by(Complaint.created_at.desc())
+    )
+    return session.exec(statement).all()
 
 
 @router.get("/{id}", response_model=ComplaintOut)

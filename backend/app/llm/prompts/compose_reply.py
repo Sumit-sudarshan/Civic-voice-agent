@@ -42,8 +42,12 @@ THE FIVE THINGS YOU MAY BE ASKED TO REQUEST (you will be told which ONE in the i
 - area: the broader neighbourhood/area name — distinct from the colony/locality (a bigger,
   more well-known part of the city that the colony sits inside) AND distinct from a city name the
   citizen may have already given in a form field (see the "[Context: ...]" line if present) — area
-  is a smaller, named part of that city, not the city itself. Never treat this as already answered
-  just because a colony name, or the city, was given.
+  is a smaller, named part of that city, not the city itself.
+  IMPORTANT — phrase this so it is easy to say "there isn't one". Many localities, especially in
+  smaller towns, genuinely have no larger named neighbourhood above them, and a citizen who is
+  asked as though one MUST exist ends up repeating themselves and feeling unheard. Add a short
+  release clause such as "...or is <locality> itself the area?" or "...if there's no bigger area
+  name, just say so." Ask once, lightly; never imply their previous answer was inadequate.
 - pincode: the postal PIN code for the area. Make clear it's fine if they don't know it. Skip this
   entirely (do not ask) if a pincode is already noted in a "[Context: ...]" line.
 - issue_clarity: ask them to describe the specific issue in more detail — what exactly is wrong.
@@ -64,13 +68,17 @@ need=landmark, target_language=English
 Conversation: Citizen: Garbage issue.\\nAgent: Which colony or locality is this in?\\nCitizen: near my house
 Response: {"reply_english": "No worries — is there a shop, temple, or building nearby I could use to pin down the spot?", "reply_localized": "No worries — is there a shop, temple, or building nearby I could use to pin down the spot?"}
 
+need=area, target_language=English
+Conversation: Citizen: Streetlight issue near my house.\\nAgent: Which colony is this in?\\nCitizen: Rajiv Nagar
+Response: {"reply_english": "Got it. Is Rajiv Nagar part of a bigger area or neighbourhood — or is Rajiv Nagar itself the area?", "reply_localized": "Got it. Is Rajiv Nagar part of a bigger area or neighbourhood — or is Rajiv Nagar itself the area?"}
+
 need=area, target_language=Hindi
 Conversation: Citizen: Streetlight issue near my house.\\nAgent: Which colony is this in?\\nCitizen: Rajiv Nagar
-Response: {"reply_english": "Got it — and which broader area of the city is that in?", "reply_localized": "ठीक है — और यह शहर के किस बड़े इलाके में है?"}
+Response: {"reply_english": "Got it — does that fall under a larger area of the city? If there's no bigger area name, just tell me and we'll move on.", "reply_localized": "ठीक है — क्या यह शहर के किसी बड़े इलाके में आता है? अगर कोई बड़ा इलाका नहीं है, तो बस बता दीजिए, हम आगे बढ़ जाएंगे।"}
 
 need=area, target_language=Marathi
 Conversation: Citizen: No water since yesterday.\\nAgent: What's the colony name?\\nCitizen: Shastri Nagar
-Response: {"reply_english": "Thanks. Which larger part of the city does Shastri Nagar fall under?", "reply_localized": "धन्यवाद. शास्त्री नगर शहराच्या कोणत्या मोठ्या भागात येते?"}
+Response: {"reply_english": "Thanks. Does Shastri Nagar come under a larger part of the city, or is it the area itself?", "reply_localized": "धन्यवाद. शास्त्री नगर शहराच्या एखाद्या मोठ्या भागात येते का, की तोच भाग आहे?"}
 
 need=pincode, target_language=English
 Conversation: (several turns establishing a clear address and area)

@@ -33,7 +33,7 @@ combination is ever missing, so the conversation always still works
 end-to-end regardless.
 """
 import zlib
-from typing import Optional, Union
+from typing import Union
 
 TEMPLATES: dict[str, dict[str, Union[str, list[str]]]] = {
     "greeting": {
@@ -93,27 +93,32 @@ TEMPLATES: dict[str, dict[str, Union[str, list[str]]]] = {
             "जवळपासची सहज ओळखता येईल अशी एखादी गोष्ट सांगू शकता का, म्हणजे नेमकी जागा स्पष्ट होईल?",
         ],
     },
+    # Every phrasing here offers an explicit way out ("or is that the area
+    # itself?"), because many localities have no larger named neighbourhood
+    # above them. A question that presumes one MUST exist is what produced the
+    # reported failure where a citizen answered three times and was still
+    # re-asked — see orchestrator.decide_next_action's docstring.
     "ask_area": {
         "en": [
-            "Which broader area of the city is this in?",
-            "And which larger area of the city does that fall under?",
-            "What's the wider neighbourhood or area this belongs to?",
-            "Zooming out a bit — which part of the city is this in?",
-            "Could you tell me the broader area or neighbourhood as well?",
+            "Is this part of a bigger area or neighbourhood — or is that itself the area?",
+            "Does that fall under a larger area of the city? If there's no bigger name, just say so.",
+            "What's the wider neighbourhood this belongs to? If there isn't one, that's fine too.",
+            "Zooming out a bit — any larger area it comes under, or is that the area itself?",
+            "Could you tell me the broader area as well, if there is one?",
         ],
         "hi": [
-            "यह शहर के किस बड़े इलाके में है?",
-            "और यह शहर के किस बड़े इलाके में आता है?",
-            "इसका बड़ा इलाका या क्षेत्र कौन सा है?",
-            "थोड़ा बड़े स्तर पर देखें तो — यह शहर के किस हिस्से में है?",
-            "क्या आप बड़ा इलाका या क्षेत्र भी बता सकते हैं?",
+            "क्या यह किसी बड़े इलाके का हिस्सा है — या यही खुद इलाका है?",
+            "क्या यह शहर के किसी बड़े इलाके में आता है? अगर कोई बड़ा नाम नहीं है, तो बस बता दीजिए।",
+            "इसका बड़ा इलाका कौन सा है? अगर कोई नहीं है, तो भी ठीक है।",
+            "थोड़ा बड़े स्तर पर — कोई बड़ा इलाका है, या यही इलाका है?",
+            "अगर कोई बड़ा इलाका है, तो क्या आप वह भी बता सकते हैं?",
         ],
         "mr": [
-            "हे शहराच्या कोणत्या मोठ्या भागात आहे?",
-            "आणि हे शहराच्या कोणत्या मोठ्या भागात येते?",
-            "याचा मोठा परिसर किंवा भाग कोणता आहे?",
-            "थोडं मोठ्या स्तरावर पाहिलं तर — हे शहराच्या कोणत्या भागात आहे?",
-            "तुम्ही मोठा परिसर किंवा भागही सांगू शकता का?",
+            "हा एखाद्या मोठ्या परिसराचा भाग आहे का — की तोच परिसर आहे?",
+            "हे शहराच्या एखाद्या मोठ्या भागात येते का? मोठे नाव नसेल तर तसे सांगा.",
+            "याचा मोठा परिसर कोणता? नसेल तर तेही चालेल.",
+            "थोडं मोठ्या स्तरावर — कोणता मोठा परिसर आहे, की तोच परिसर आहे?",
+            "मोठा परिसर असेल तर तोही सांगू शकता का?",
         ],
     },
     "ask_pincode": {

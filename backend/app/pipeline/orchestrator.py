@@ -185,7 +185,11 @@ NextActionKind = Literal[
 ]
 
 MAX_ADDRESS_ATTEMPTS = 2      # base ask + 1 landmark nudge
-MAX_AREA_ATTEMPTS = 3
+# Two asks, not three. The reported failure had the citizen answering "area is
+# same as Shriram Nagar" and still being asked twice more — by the second ask
+# a citizen who hasn't produced a separate area name almost certainly doesn't
+# have one, and further asking reads as the system not listening.
+MAX_AREA_ATTEMPTS = 2
 MAX_PINCODE_ATTEMPTS = 3
 MAX_ISSUE_ATTEMPTS_VAGUE = 2  # attempts while complaint-vs-suggestion is still unknown
 MAX_ISSUE_ATTEMPTS_NORMAL = 1
@@ -232,8 +236,13 @@ def _area_is_probably_duplicate(address: Optional[str], area: Optional[str]) -> 
     sometimes copies location_address's text (or a landmark-style phrase)
     into location_area rather than leaving it null when no genuinely
     distinct area name was given. If area is empty, identical to address, or
-    one is a substring of the other, treat area as NOT actually resolved —
-    forces one more question rather than silently accepting a duplicate.
+    one is a substring of the other, treat area as NOT independently
+    resolved.
+
+    Note this is only about whether the LLM supplied a *distinct* area — it
+    is NOT the same question as "can we proceed". A citizen who tells us the
+    locality IS the area has answered completely; that path is handled by
+    DialogueState.area_same_as_address in decide_next_action, not here.
     """
     a, b = _normalize(address), _normalize(area)
     if not b:
@@ -247,13 +256,24 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
                         known_pincode: Optional[str] = None) -> NextAction:
     """
     Pure Python, no LLM — turns the dialogue manager's diagnostic judgment
-    into an actual next step. Address and issue-clarity caps give up
-    gracefully (stored as "not specified"/left as-is) since those aren't
-    strictly required to act on a submission. Area and pincode are required:
-    exhausting their attempt caps (MAX_AREA_ATTEMPTS / MAX_PINCODE_ATTEMPTS)
-    without a resolution is a hard stop ("cannot_proceed") that ends the
-    conversation, not a silent fallback — an explicit pincode decline
-    ("I don't know") is the one exception, accepted immediately as resolved.
+    into an actual next step. Address, area, and issue-clarity all give up
+    gracefully rather than discarding the submission.
+
+    Area specifically is NEVER a hard stop (this was a real, user-reported
+    bug): a citizen reporting daily multi-hour power cuts, who had already
+    named their locality and then said "area is same as Shriram Nagar", was
+    asked three times and then told "Can't Proceed With This Request" — a
+    fully actionable complaint thrown away over a missing label for a
+    *larger* place that, in many towns, does not exist at all. Two things
+    prevent that now: `area_same_as_address` (the citizen asserting the
+    locality IS the area, honoured immediately, exactly like an explicit
+    pincode decline), and, if the attempt cap is somehow still reached, a
+    fall back to the address rather than a rejection. The citizen is the
+    authority on their own location.
+
+    Pincode remains a hard stop after MAX_PINCODE_ATTEMPTS, since an
+    explicit "I don't know" is already accepted immediately and the FR9
+    header field usually supplies it before the chat even starts.
 
     Deliberately re-validates a couple of the LLM's judgments rather than
     trusting them blindly (see _area_is_probably_duplicate/
@@ -270,7 +290,16 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
     what the LLM does with it.
     """
     total_bot_turns = sum(1 for t in history if t.speaker == "bot")
-    area_resolved = not _area_is_probably_duplicate(state.location_address, state.location_area)
+    has_distinct_area = not _area_is_probably_duplicate(state.location_address, state.location_area)
+    # The citizen asserting "the locality IS the area" settles the question
+    # just as completely as naming a separate one — but only once they've
+    # actually given a usable locality for it to refer to.
+    area_asserted = bool(
+        getattr(state, "area_same_as_address", False)
+        and state.location_address
+        and state.address_specific_enough
+    )
+    area_resolved = has_distinct_area or area_asserted
     effective_pincode = state.location_pincode or (
         known_pincode if _looks_like_real_pincode(known_pincode) else None
     )
@@ -278,11 +307,24 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
         _normalize(effective_pincode) == "not specified" or _looks_like_real_pincode(effective_pincode)
     )
 
+    def _resolved_area() -> Optional[str]:
+        """
+        The area to file under. A genuinely distinct area wins; otherwise the
+        citizen's own locality stands in for it (they told us it's the same
+        place), which keeps dedup grouping on something real and keeps the
+        leader dashboard showing a location instead of "not specified".
+        """
+        if has_distinct_area:
+            return state.location_area
+        if state.location_address and state.address_specific_enough:
+            return state.location_address
+        return "not specified"
+
     def _ready() -> NextAction:
         return NextAction(
             kind="ready",
             location_address=state.location_address or "not specified",
-            location_area=state.location_area if area_resolved else "not specified",
+            location_area=_resolved_area(),
             location_pincode=effective_pincode if pincode_resolved else "not specified",
         )
 
@@ -306,13 +348,12 @@ def decide_next_action(state: DialogueState, history: List[ChatTurnRecord], vagu
             return NextAction(kind="ask_landmark")
         # give up tightening the address further, fall through
 
-    # Area — ask up to MAX_AREA_ATTEMPTS times; if the citizen still hasn't
-    # given a genuine area after that, this is a hard stop (not a silent
-    # "not specified" fallback) — the area is required to proceed.
-    if not area_resolved:
-        if _asked(history, "ask_area") < MAX_AREA_ATTEMPTS:
-            return NextAction(kind="ask_area")
-        return NextAction(kind="cannot_proceed", giveup_reason="area_missing")
+    # Area — ask at most MAX_AREA_ATTEMPTS times, then proceed with what the
+    # citizen gave us. Never a hard stop: see this function's docstring for
+    # the real complaint this discarded. If they've named a findable
+    # locality, that is enough to act on and enough to route to a leader.
+    if not area_resolved and _asked(history, "ask_area") < MAX_AREA_ATTEMPTS:
+        return NextAction(kind="ask_area")
 
     # Pincode — an explicit decline ("I don't know") is accepted immediately
     # and treated as resolved. Only genuinely unanswered/unusable replies

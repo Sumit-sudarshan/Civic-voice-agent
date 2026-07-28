@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlalchemy.pool import StaticPool
@@ -119,6 +120,53 @@ def test_get_and_patch_complaint():
     response3 = client.patch(f"/complaints/{c_id}/status?status=in_progress")
     assert response3.status_code == 200
     assert response3.json()["status"] == "in_progress"
+
+
+def test_get_my_complaints_scopes_to_owner_and_is_unmasked():
+    """FR6 — GET /complaints/mine returns only the logged-in citizen's own
+    submissions (by owner_user_id, not any client-supplied value), unmasked,
+    newest first."""
+    my_id = uuid.UUID("00000000-0000-0000-0000-000000000001")  # matches get_current_user_override
+    other_id = uuid.uuid4()
+
+    with Session(engine) as session:
+        mine_older = Complaint(
+            submission_type=SubmissionType.complaint, raw_text="My older complaint",
+            citizen_name="Test User", citizen_phone="9876543210",
+            status=Status.open, owner_user_id=my_id,
+        )
+        mine_newer = Complaint(
+            submission_type=SubmissionType.suggestion, raw_text="My newer suggestion",
+            citizen_name="Test User", citizen_phone="9876543210",
+            status=Status.open, owner_user_id=my_id,
+        )
+        someone_elses = Complaint(
+            submission_type=SubmissionType.complaint, raw_text="Not mine",
+            citizen_name="Other", citizen_phone="9999999999",
+            status=Status.open, owner_user_id=other_id,
+        )
+        session.add(mine_older)
+        session.commit()
+        session.refresh(mine_older)
+        mine_older.created_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        session.add(mine_older)
+        session.add(mine_newer)
+        session.add(someone_elses)
+        session.commit()
+        session.refresh(mine_newer)
+        session.refresh(someone_elses)
+        mine_newer_id, mine_older_id = str(mine_newer.id), str(mine_older.id)
+        someone_elses_id = str(someone_elses.id)
+
+    resp = client.get("/complaints/mine")
+    assert resp.status_code == 200
+    ids = [c["id"] for c in resp.json()]
+
+    assert mine_newer_id in ids and mine_older_id in ids
+    assert all(c["citizen_phone"] == "9876543210" for c in resp.json() if c["id"] in (mine_newer_id, mine_older_id)), \
+        "a citizen's own phone must never be masked on their own submissions"
+    assert someone_elses_id not in ids, "must never include another citizen's submission"
+    assert ids.index(mine_newer_id) < ids.index(mine_older_id), "newest first"
 
 
 def test_patch_status_blocked_for_other_leaders_complaint():
