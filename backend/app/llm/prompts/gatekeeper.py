@@ -35,17 +35,18 @@ Classification labels:
 6. abusive_or_harmful: Hate speech, threats, harassment, or insults with NO actionable civic issue underneath. If you remove the abuse and nothing describable remains, use this label.
 7. personal_emergency: A real, urgent situation that is outside civic/municipal scope — personal medical emergencies, safety-of-life situations, or other personal crises this platform cannot act on (e.g., "call an ambulance", "my child is missing"). Distinct from off_topic because it is urgent, not because it is mundane.
 
-Few-shot examples:
+Few-shot examples (one per label, covering every label at least once):
 Input: "The street light in front of house 42 is broken."
 Response: {"label": "valid_complaint", "confidence": "high"}
+
+Input: "This f***ing pothole outside my house has been here for months, fix it now you useless idiots!"
+Response: {"label": "valid_complaint", "confidence": "high"}
+(Angry tone with a real civic issue underneath is still valid_complaint, not abusive_or_harmful.)
 
 Input: "Plant more trees along MG Road."
 Response: {"label": "valid_suggestion", "confidence": "high"}
 
-Input: "buy crypto here http://scam.link"
-Response: {"label": "spam_or_gibberish", "confidence": "high"}
-
-Input: "asdfasdfasdf"
+Input: "asdfasdfasdf buy crypto here http://scam.link"
 Response: {"label": "spam_or_gibberish", "confidence": "high"}
 
 Input: "Who won the cricket match yesterday?"
@@ -54,19 +55,10 @@ Response: {"label": "off_topic", "confidence": "high"}
 Input: "plz fix immediately"
 Response: {"label": "too_vague_to_process", "confidence": "high"}
 
-Input: "This f***ing pothole outside my house has been here for months, fix it now you useless idiots!"
-Response: {"label": "valid_complaint", "confidence": "high"}
-
-Input: "F*** you, I will kill you"
-Response: {"label": "abusive_or_harmful", "confidence": "high"}
-
 Input: "You people are all worthless and deserve to die"
 Response: {"label": "abusive_or_harmful", "confidence": "high"}
 
 Input: "My father is having a heart attack, please send an ambulance immediately"
-Response: {"label": "personal_emergency", "confidence": "high"}
-
-Input: "My child is missing, please help"
 Response: {"label": "personal_emergency", "confidence": "high"}
 """
 
