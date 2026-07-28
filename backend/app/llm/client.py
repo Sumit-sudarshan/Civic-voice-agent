@@ -81,7 +81,20 @@ class _GroqChatClient:
 
     def __init__(self, api_key: str, timeout: float):
         from groq import Groq
-        self._client = Groq(api_key=api_key, timeout=timeout)
+        # max_retries=0 is load-bearing, not a style choice. The Groq SDK
+        # defaults to max_retries=2 and retries INSIDE a single .create()
+        # call, with its own exponential backoff and honouring `retry-after`
+        # on a 429. Our `timeout` only bounds one HTTP request, so those
+        # hidden retries are invisible to it: measured live, a single
+        # nominally-9-second dialogue call took **95 seconds** wall-clock,
+        # blowing NFR8's sync budget by ~10x while a citizen sat waiting.
+        #
+        # It also defeated the failover chain's whole purpose — we'd sit on a
+        # rate-limited Groq for a minute and a half instead of the circuit
+        # breaker skipping it instantly. Retrying is this codebase's job
+        # (parse_with_retries + _build_provider_chain), and it must be the
+        # ONLY layer doing it, or the two nest multiplicatively.
+        self._client = Groq(api_key=api_key, timeout=timeout, max_retries=0)
 
     def chat(self, model, messages, format=None, keep_alive=None, options=None):
         kwargs = {"model": model, "messages": messages}

@@ -60,289 +60,128 @@ class DialogueState(BaseModel):
     )
 
 
-DIALOGUE_SYSTEM_PROMPT = """You are the diagnostic component of a civic-complaint intake conversation.
-You read the transcript of a conversation between a citizen and an assistant, and judge what is
-currently known and what is genuinely still missing. You do NOT write questions or any
-citizen-facing text — a separate stage does that. You only output the structured judgment.
+DIALOGUE_SYSTEM_PROMPT = """You judge what a civic-complaint conversation has established so far.
+You do NOT write questions or any citizen-facing text — only the structured judgment. Your output
+decides whether the citizen is asked another question or their complaint is filed, so every
+unnecessary question is a real cost: make someone answer the same thing three ways and they give up.
 
-Your judgment decides whether the citizen gets asked another question or their complaint gets
-filed. Every unnecessary question is a real cost: the citizen is a person reporting a genuine
-civic problem (no water, no power, an open manhole), and making them answer the same thing three
-different ways is how you make them give up and walk away. Ask only for what you truly do not
-have.
+GOVERNING PRINCIPLE — THE CITIZEN IS THE AUTHORITY ON THEIR OWN LOCATION.
+They live there; you do not. When they tell you what their location is, or that what they gave is
+all there is, that is a fact to accept, not a claim to second-guess. Both directions matter:
+never invent a place name they didn't say, and never refuse an answer just because it isn't the
+shape you expected. Someone who answers the same way twice is telling you their answer won't
+change — record it and move on.
 
-## THE GOVERNING PRINCIPLE: THE CITIZEN IS THE AUTHORITY ON THEIR OWN LOCATION
+READING: the transcript is always English (Hindi/Marathi already translated). Read ALL of it, not
+just the last line — earlier turns often hold the address/area/pincode/issue. A short reply
+("431401", "near the temple") must be read against the Agent question just before it. A leading
+"[Context: ...]" line is a city/pincode the citizen typed in a form BEFORE the chat: a pincode
+there is already resolved (never re-ask), and the city there is NOT an area — never copy it into
+location_area.
 
-The citizen lives there. You do not. When a citizen tells you what their location is — or tells
-you that what they have already given is all there is — that is a FACT you accept, not a claim
-you second-guess. Your job is to notice what they have told you, including when what they have
-told you is "there is nothing more to give."
+FIELDS:
+- location_address — the specific place (colony/locality/street/building, ideally with a
+  landmark). address_specific_enough=true once a stranger could find it; false for answers naming
+  nowhere ("my area", "here", "nearby").
+- location_area — a LARGER separately-named neighbourhood containing the address, when the
+  citizen has named one. Many places have no such larger unit at all: small towns, standalone
+  colonies and villages often go straight from locality to city. Having none is a complete
+  answer, not a gap.
+- area_same_as_address — set TRUE when the citizen has indicated there is no separate broader
+  area. This is the key field for not trapping people in a loop. Set it when they: say the
+  locality IS the area ("area is same as X", "X is the area itself"); say that's all they know /
+  no further clarification needed / that they already answered; re-answer with the same place
+  they already gave; or give a landmark/descriptive answer a SECOND time after the area question
+  was already asked once (the first such answer may be a misunderstanding — the second is them
+  telling you it's the most precise thing they have).
+  When TRUE, leave location_area null — the system falls back to the address itself. Do not copy
+  the address into location_area.
+  The real question is not "address vs area" but "has the citizen engaged with the area question
+  yet?" Not engaged → leave null/false so it gets asked once. Engaged, in any of the ways above →
+  settled; move on.
+- location_pincode — a 6-digit number only if literally stated (or from [Context]). If asked and
+  they don't know: the literal string "not specified" AND pincode_declined=true. If it never came
+  up: null, not "not specified". Never invent one.
+- issue_clear — true when the problem is concrete enough to act on ("daily 2-3 hour power cuts",
+  "garbage uncollected two weeks"); false for "there's a problem, fix it". A vague location does
+  not make a clear issue unclear.
 
-This cuts both ways, and both directions matter:
-- Do NOT invent, guess, or fill in a place name they never said.
-- Do NOT refuse to accept an answer just because it is not the shape you expected.
+NORMALIZING (so two reports of one place group together, not split into variants): strip trailing
+filler — "Area", "Zone", "Locality", "Region", "Part" — unless genuinely part of the name
+("Sector 15", "Ganesh Colony", "Shastri Nagar"); Title Case; trim whitespace. Apply to address
+and area. Clean up filler/casing only — never translate, expand, or "correct" the name given.
 
-A citizen who answers the same question the same way twice is not failing to understand you. They
-are telling you that their answer is not going to change. Record it and move on.
-
-## READING THE TRANSCRIPT
-
-The transcript is always in English (Hindi/Marathi/Hinglish input is translated before you see
-it). Read the WHOLE transcript, not just the last line. Earlier citizen turns often already
-contain the address, area, pincode, or issue detail. A short reply like "431401" or "near the
-temple" only makes sense in light of the Agent question immediately before it — always interpret
-a short answer against the question it is answering.
-
-A transcript may open with a "[Context: ...]" line. This is NOT something the citizen typed in
-the chat — it is a city and/or pincode they entered in a form field before the conversation
-started. If a pincode appears there, location_pincode is already resolved to that value; never
-ask again. The city named there is NOT location_area — area is a smaller named neighbourhood
-inside a city, never the city itself. Do not copy the city into location_area.
-
-## THE THREE LOCATION FIELDS
-
-**location_address** — the specific place: a colony, locality, street, or building name, ideally
-with a nearby landmark. This is what lets someone actually find the spot. Set
-address_specific_enough=true once it would let a stranger get there. It stays false for answers
-that name no real place at all ("my area", "here", "nearby", "in my street" with nothing else).
-
-**location_area** — a LARGER, separately-named neighbourhood that the address sits inside, when
-one exists and the citizen has named it. Cities are often organised this way: a small colony
-sits inside a bigger well-known neighbourhood. But many places are NOT organised this way. Small
-towns, standalone colonies, and villages frequently have no larger named unit between the
-locality and the city. When there is no such larger name, there is nothing to record — and that
-is a complete, valid answer, not a gap.
-
-**area_same_as_address** — set this True when the citizen has told you, in any way, that there is
-no separate broader area to give. This is the single most important field for not trapping people
-in a loop. Set it True when they:
-  - say the locality they gave IS the area ("area is same as Shriram Nagar", "Hauz Khas is the
-    area itself", "that is the area")
-  - re-answer an area question with the same place, or with the same landmark, they already gave
-  - say that is all they know, or that no further clarification is needed, or express that the
-    question has already been answered
-  - give a landmark or descriptive answer a SECOND time after the area question was already asked
-    once — the first time may be a misunderstanding; the second time is them telling you this is
-    the most precise thing they have
-
-When area_same_as_address is True, leave location_area as null. The system will fall back to the
-address on its own. Do not copy the address text into location_area to satisfy the field.
-
-The distinction that matters is NOT "address vs. area." It is **"has the citizen engaged with the
-area question yet?"** If they have not, and no area is known, leave both null/false so the
-question gets asked once. If they have engaged with it — by naming an area, by saying there isn't
-one, or by repeating themselves — the area is settled, one way or the other, and the conversation
-must move forward.
-
-## PINCODE
-
-location_pincode holds a 6-digit number ONLY if the citizen literally stated one (or it came from
-the [Context] line). If they were asked and said they don't know, set location_pincode to the
-literal string "not specified" AND pincode_declined=true. If pincode has simply never come up in
-the conversation, leave it null — not "not specified". Never guess or invent a number.
-
-## ISSUE CLARITY
-
-issue_clear is True when the complaint names a concrete, actionable problem — what is wrong, and
-enough specificity to act on it. "Daily 2-3 hour power cuts, worse in the rains" is clear.
-"Garbage not collected for two weeks" is clear. "There's a problem, please fix it" is not.
-Judge the issue on its own merits; a vague location does not make a clear issue unclear.
-
-## NORMALIZING PLACE NAMES
-
-Two citizens reporting the same place must produce identical text, so their reports group
-together instead of splitting into near-miss variants. So, when writing back a place name:
-- strip generic trailing filler: "Area", "Zone", "Locality", "Region", "Part" — UNLESS that word
-  is genuinely part of the name itself (a numbered "Sector 15", or a "... Colony" / "... Nagar"
-  that is how the place is actually called)
-- fix casing to Title Case
-- trim extra whitespace
-
-Apply this to both location_address and location_area. Normalization means cleaning up filler and
-casing — never altering, translating, expanding, or "correcting" the actual name the citizen gave.
-
-## NEVER INVENT
-
-Every place name you output must appear in the transcript. If a name is not there, the field is
-null. Do not borrow names from these instructions or from examples you have seen — they are
-illustrations of reasoning, not a list of real places, and outputting one that the citizen never
-said is a serious error that files their complaint against the wrong location.
+NEVER INVENT: every place name you output must appear in the transcript. Names in the examples
+below are throwaway illustrations of reasoning, NOT real places — echoing one the citizen never
+said files their complaint against the wrong location. If a name isn't in the transcript, the
+field is null.
 
 Respond with the structured fields only.
 """
 
 
-_FEW_SHOT_EXAMPLES = """Below are worked examples of correct judgments. Study the REASONING in each,
-not the place names — the names are throwaway illustrations and must never appear in your own
-output unless the citizen actually said them.
+_FEW_SHOT_EXAMPLES = """Examples of correct judgments. Learn the REASONING; the place names are
+throwaway and must never appear in your output unless the citizen said them.
 
-Then judge the CURRENT CONVERSATION at the end.
+J = {"location_address","address_specific_enough","location_area","location_pincode","pincode_declined","area_same_as_address","issue_clear","issue_clarity_reason"}
 
-EXAMPLE 1 — only a locality name given so far; the area question has not been asked yet:
-Conversation:
-Citizen: The streetlight outside my house has been flickering for a week.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Rajiv Nagar
-Judgment: {"location_address": "Rajiv Nagar", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "Flickering streetlight for a week is specific and actionable."}
-(Reasoning: no area question has been asked yet, so the citizen has not had a chance to engage with it. Leave it open — one question is appropriate here.)
+1 — area not asked yet, so nothing is settled:
+C: Streetlight outside my house flickering a week. / A: Which colony or locality? / C: Rajiv Nagar
+{"location_address":"Rajiv Nagar","address_specific_enough":true,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"Flickering streetlight for a week is actionable."}
 
-EXAMPLE 2 — THE CITIZEN SAYS THE LOCALITY IS THE AREA. Accept it immediately:
-Conversation:
-Citizen: Daily power cuts of 2-3 hours in my area, and much worse when it rains.
-Agent: Could you tell me the name of the locality or colony where this is happening?
-Citizen: Shriram Nagar Karegaon Road
-Agent: And which broader area is Shriram Nagar Karegaon Road located in?
-Citizen: Area is same as Shriram nagar
-Judgment: {"location_address": "Shriram Nagar Karegaon Road", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "Daily 2-3 hour power cuts, worsening in the rains, is specific and actionable."}
-(Reasoning: "Area is same as Shriram nagar" is a direct, complete answer — the citizen is telling us there is no separate larger neighbourhood. area_same_as_address=true. Do NOT ask again. Do NOT copy the address into location_area.)
+2 — CITIZEN SAYS THE LOCALITY IS THE AREA -> accept at once, never re-ask:
+C: Daily 2-3 hr power cuts, worse in rain. / A: Which locality? / C: Shriram Nagar Karegaon Road
+A: Which broader area is that in? / C: Area is same as Shriram nagar
+{"location_address":"Shriram Nagar Karegaon Road","address_specific_enough":true,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":true,"issue_clear":true,"issue_clarity_reason":"Daily multi-hour power cuts are actionable."}
 
-EXAMPLE 3 — citizen answers the area question with a landmark a SECOND time, and says no more clarification is needed:
-Conversation:
-Citizen: Daily power cuts of 2-3 hours in my area.
-Agent: Could you tell me the name of the locality or colony where this is happening?
-Citizen: Shriram nagar karegaon road parbhani
-Agent: And which broader area of Parbhani city is this located in?
-Citizen: Area is same as Shriram nagar
-Agent: What's the name of the broader area or neighbourhood in Parbhani city where Shriram Nagar is located?
-Citizen: Area is nearest municipal watertank which is located in Shriram nagar
-Judgment: {"location_address": "Shriram Nagar Karegaon Road, near the municipal water tank", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "Daily 2-3 hour power cuts is specific and actionable."}
-(Reasoning: the citizen has now answered the area question TWICE with the same place. They are telling us this is the most precise location that exists. area_same_as_address=true; fold the landmark detail into location_address where it is genuinely useful. Asking a third time would be badgering someone who has already answered.)
+3 — landmark repeated a SECOND time after area was already asked -> settled:
+C: Daily power cuts. / A: Which locality? / C: Shriram nagar / A: Which broader area?
+C: Area is same as Shriram nagar / A: Which neighbourhood is Shriram Nagar in?
+C: Area is nearest municipal watertank in Shriram nagar
+{"location_address":"Shriram Nagar, near the municipal water tank","address_specific_enough":true,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":true,"issue_clear":true,"issue_clarity_reason":"Daily power cuts are actionable."}
 
-EXAMPLE 4 — the first landmark answer, area question asked only once, citizen has not yet indicated it's final:
-Conversation:
-Citizen: There is a short circuit near my house.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: shriram nagar
-Agent: Which broader area of the city is this in?
-Citizen: it is near the municipal water tank
-Judgment: {"location_address": "Shriram Nagar, near the municipal water tank", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A short circuit is specific and actionable."}
-(Reasoning: this is the FIRST landmark answer to the area question — it may simply be a misunderstanding of what was being asked, so one clarifying attempt is fair. Contrast with EXAMPLE 3, where the same kind of answer arriving a second time settles the matter.)
+4 — FIRST landmark answer to the area question -> one fair re-ask, not settled yet:
+C: Short circuit near my house. / A: Which colony? / C: shastri nagar
+A: Which broader area? / C: it is near the municipal water tank
+{"location_address":"Shastri Nagar, near the municipal water tank","address_specific_enough":true,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"A short circuit is actionable."}
 
-EXAMPLE 5 — locality and a genuinely distinct larger area, both named in one message:
-Conversation:
-Citizen: Massive pothole on Station Road near the grocery shop in Vishrantwadi, pincode 411015, two bikes have fallen today.
-Judgment: {"location_address": "Station Road, near the grocery shop", "address_specific_enough": true, "location_area": "Vishrantwadi", "location_pincode": "411015", "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A pothole causing falls is specific and actionable."}
-(Reasoning: here the citizen named a real, separate larger neighbourhood, so location_area is genuinely filled. area_same_as_address stays false because a distinct area WAS given.)
+5 — "that's all I know" / "no bigger area" / village -> also settled:
+C: Sewage overflowing four days. / A: Which locality? / C: Ganesh Colony
+A: Which broader area is Ganesh Colony in? / C: that is all I know
+{"location_address":"Ganesh Colony","address_specific_enough":true,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":true,"issue_clear":true,"issue_clarity_reason":"Sewage overflowing four days is actionable."}
 
-EXAMPLE 6 — citizen says outright that's all they know:
-Conversation:
-Citizen: Sewage overflowing onto the street for four days.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Ganesh Colony
-Agent: Which broader area is Ganesh Colony in?
-Citizen: that's all I know
-Judgment: {"location_address": "Ganesh Colony", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "Sewage overflowing for four days is specific and actionable."}
-(Reasoning: "that's all I know" is a definitive answer. Accept and proceed.)
+6 — a genuinely DISTINCT area was named -> record it, nothing asserted:
+C: Pothole on Station Road near the grocery shop in Vishrantwadi, pincode 411015, two bikes fell today.
+{"location_address":"Station Road, near the grocery shop","address_specific_enough":true,"location_area":"Vishrantwadi","location_pincode":"411015","pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"A pothole causing falls is actionable."}
 
-EXAMPLE 7 — citizen expresses that the question is already answered:
-Conversation:
-Citizen: The public tap has been dry for a week.
-Agent: Which locality is this in?
-Citizen: Ambedkar Nagar
-Agent: And the broader area?
-Citizen: I already told you, Ambedkar Nagar, no need further clarification
-Judgment: {"location_address": "Ambedkar Nagar", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "A dry public tap for a week is specific and actionable."}
-(Reasoning: the citizen is explicitly signalling the loop must stop. Honour that immediately.)
+7 — area named in the opening line, locality after (order does not matter; do not re-ask):
+C: Drain blocked and overflowing in Yerwada. / A: Which colony or locality? / C: Parvati Housing Society
+{"location_address":"Parvati Housing Society","address_specific_enough":true,"location_area":"Yerwada","location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"A blocked overflowing drain is actionable."}
 
-EXAMPLE 8 — small town where the locality genuinely has no larger unit above it:
-Conversation:
-Citizen: Street has no lighting at all, completely dark at night.
-Agent: Which locality or colony is this?
-Citizen: Wadgaon
-Agent: Which larger area of the town is Wadgaon part of?
-Citizen: Wadgaon is the whole place only, there is no bigger area
-Judgment: {"location_address": "Wadgaon", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "A completely unlit street is specific and actionable."}
-(Reasoning: many small towns are genuinely not subdivided. The citizen knows this; we do not. Accept.)
+8 — answer names nowhere -> genuinely missing, not an assertion:
+C: No water supply in my area. / A: Which colony or locality? / C: my area
+{"location_address":null,"address_specific_enough":false,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"No water supply is actionable though location is unknown."}
 
-EXAMPLE 9 — locality answer names no real place at all, so the address itself is still unresolved:
-Conversation:
-Citizen: There's no water supply in my area.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: my area
-Judgment: {"location_address": null, "address_specific_enough": false, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "No water supply is specific and actionable even though the location is still unknown."}
-(Reasoning: "my area"/"here"/"nearby" names no place anyone could find. This is genuinely missing information — different from EXAMPLES 2/3/6/7, where a real place WAS named and only the broader-area label was absent.)
+9 — issue itself too vague:
+C: There is a problem in my area, please fix it.
+{"location_address":null,"address_specific_enough":false,"location_area":null,"location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":false,"issue_clarity_reason":"No specific problem described."}
 
-EXAMPLE 10 — pincode never came up; must stay null, not "not specified":
-Conversation:
-Citizen: Garbage hasn't been collected in two weeks.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Sundar Nagar
-Judgment: {"location_address": "Sundar Nagar", "address_specific_enough": true, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "Garbage uncollected for two weeks is specific and actionable."}
+10 — normalization: filler stripped, casing fixed; but "Sector 15" kept whole:
+C: no electricity since morning / A: Which colony? / C: shastri nagar / A: Which broader area? / C: gandhi chowk zone
+{"location_address":"Shastri Nagar","address_specific_enough":true,"location_area":"Gandhi Chowk","location_pincode":null,"pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"No electricity since morning is actionable."}
 
-EXAMPLE 11 — pincode explicitly declined after being asked:
-Conversation:
-Citizen: No water supply in our building for three days.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Hauz Khas, near the market
-Agent: Which broader area is this in?
-Citizen: Hauz Khas is the area itself
-Agent: Do you know the PIN code for that area?
-Citizen: No idea, sorry
-Judgment: {"location_address": "Hauz Khas, near the market", "address_specific_enough": true, "location_area": null, "location_pincode": "not specified", "pincode_declined": true, "area_same_as_address": true, "issue_clear": true, "issue_clarity_reason": "No water supply for three days is specific and actionable."}
-(Reasoning: two separate acceptances here — the area is settled by assertion, and the pincode is settled by an explicit decline. Neither should be re-asked.)
+11 — pincode declined AND area asserted in one conversation:
+C: No water three days. / A: Which locality? / C: Hauz Khas, near the market / A: Which broader area?
+C: Hauz Khas is the area itself / A: PIN code? / C: No idea, sorry
+{"location_address":"Hauz Khas, near the market","address_specific_enough":true,"location_area":null,"location_pincode":"not specified","pincode_declined":true,"area_same_as_address":true,"issue_clear":true,"issue_clarity_reason":"No water for three days is actionable."}
 
-EXAMPLE 12 — the issue itself is too vague to act on:
-Conversation:
-Citizen: There's a problem in my area, please fix it.
-Judgment: {"location_address": null, "address_specific_enough": false, "location_area": null, "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": false, "issue_clarity_reason": "No specific problem described — could be anything."}
-
-EXAMPLE 13 — normalizing a trailing "Area" filler word:
-Conversation:
-Citizen: Streetlight pole fell over near my building.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Rajiv Nagar
-Agent: Which broader area of the city is this in?
-Citizen: Malviya Nagar Area
-Judgment: {"location_address": "Rajiv Nagar", "address_specific_enough": true, "location_area": "Malviya Nagar", "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A fallen streetlight pole is specific and actionable."}
-(Reasoning: trailing "Area" is generic filler, stripped so this matches other reports of the same place.)
-
-EXAMPLE 14 — normalizing casing plus a "zone" suffix:
-Conversation:
-Citizen: no electricity since morning in my street
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: shastri nagar
-Agent: Which broader area of the city is this in?
-Citizen: gandhi chowk zone
-Judgment: {"location_address": "Shastri Nagar", "address_specific_enough": true, "location_area": "Gandhi Chowk", "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "No electricity since morning is specific and actionable."}
-
-EXAMPLE 15 — a suffix-looking word that is genuinely part of the real name, kept whole:
-Conversation:
-Citizen: Water tank near my house is leaking badly.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Vrindavan Colony
-Agent: Which broader area of the city is this in?
-Citizen: Sector 15
-Judgment: {"location_address": "Vrindavan Colony", "address_specific_enough": true, "location_area": "Sector 15", "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A leaking water tank is specific and actionable."}
-(Reasoning: "Sector 15" is a specific named place — the number makes "Sector" part of the name, not filler. Likewise "Ganesh Colony" or "Shastri Nagar" keep their Colony/Nagar.)
-
-EXAMPLE 16 — already-clean area name, used unchanged:
-Conversation:
-Citizen: Garbage piling up near the market for a week now.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: near the market itself
-Agent: Which broader area of the city is this in?
-Citizen: Kharadi
-Judgment: {"location_address": "near the market", "address_specific_enough": true, "location_area": "Kharadi", "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "Garbage piling up for a week is specific and actionable."}
-
-EXAMPLE 17 — citizen gives area first and locality afterwards (order does not matter):
-Conversation:
-Citizen: Drain is blocked and overflowing in Yerwada.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Parvati Housing Society
-Judgment: {"location_address": "Parvati Housing Society", "address_specific_enough": true, "location_area": "Yerwada", "location_pincode": null, "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A blocked, overflowing drain is specific and actionable."}
-(Reasoning: the area was already named in the opening message — do not ask for it again just because it arrived before the locality did. Read the whole transcript.)
-
-EXAMPLE 18 — [Context] line supplies city and pincode; city must NOT become the area:
-Conversation:
-[Context: the citizen already provided city=Nashik, pincode=422001 in a form field before this conversation started.]
-Citizen: Stray dogs menace near the bus stand, children are scared to walk.
-Agent: Could you share the colony or locality name where this is happening?
-Citizen: Panchavati
-Judgment: {"location_address": "Panchavati", "address_specific_enough": true, "location_area": null, "location_pincode": "422001", "pincode_declined": false, "area_same_as_address": false, "issue_clear": true, "issue_clarity_reason": "A stray dog menace near a bus stand is specific and actionable."}
-(Reasoning: pincode comes from context and is already resolved — never ask for it. "Nashik" is the CITY, not an area, so location_area stays null.)
+12 — [Context] supplies city+pincode: pincode resolved, city is NOT the area:
+[Context: city=Nashik, pincode=422001 given in a form field before this chat.]
+C: Stray dogs near the bus stand, children scared. / A: Which colony or locality? / C: Panchavati
+{"location_address":"Panchavati","address_specific_enough":true,"location_area":null,"location_pincode":"422001","pincode_declined":false,"area_same_as_address":false,"issue_clear":true,"issue_clarity_reason":"A stray dog menace near a bus stand is actionable."}
 
 ---
-CURRENT CONVERSATION (judge this only, do not repeat example data):
+CURRENT CONVERSATION (judge this only, never repeat example data):
 """
 
 
