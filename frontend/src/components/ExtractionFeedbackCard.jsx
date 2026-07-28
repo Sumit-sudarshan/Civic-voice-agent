@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, CheckCircle2, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
+import { Loader2, CheckCircle2, ThumbsUp, ThumbsDown, Sparkles, AlertTriangle } from 'lucide-react';
 import { fetchSubmissionStatus, sendExtractionFeedback } from '../api/client';
 
 // Eval Layer 2 (citizen-side): once the pipeline finishes analysing a fresh
@@ -117,7 +117,22 @@ export default function ExtractionFeedbackCard({ complaintId, submissionType, on
   }
 
   if (status === 'failed') {
-    return null; // silently skip the feedback step if analysis didn't complete in time
+    // The submission itself is never lost (NFR7 — classify/urgency can
+    // still have succeeded even if extract didn't; needs_human_review just
+    // means a person looks at it instead of the AI). Previously this
+    // silently rendered nothing, leaving the citizen staring at a stuck
+    // "Analyzing…" spinner with no explanation once polling gave up.
+    return (
+      <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs font-semibold text-gray-800">We couldn't finish analyzing this one automatically</p>
+          <p className="text-[11px] text-gray-600 mt-0.5">
+            Your submission is still recorded and will reach the concerned person — a team member will review the details by hand.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (done) {
