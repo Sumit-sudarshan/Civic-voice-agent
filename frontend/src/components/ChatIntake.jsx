@@ -29,15 +29,15 @@ export default function ChatIntake({ onClose, user }) {
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Auto-grow the message box vertically as the citizen types a long
-  // description, instead of letting a single-line input scroll horizontally.
-  // Capped (max-h-28 below) so it doesn't take over the whole chat window;
-  // overflow-y-auto on the element itself takes over past that height.
+  // Starts at a visibly taller 3-line default (not a single-line pill) and
+  // grows further as the citizen types a long description, instead of ever
+  // scrolling horizontally. Capped (max-h-40 below, 160px) so it doesn't take
+  // over the whole chat window; overflow-y-auto takes over past that height.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input]);
 
   // FR9 — concerned-person selector. City/pincode narrow a leader dropdown;
@@ -310,7 +310,7 @@ export default function ChatIntake({ onClose, user }) {
             <form onSubmit={handleSend} className="border-t border-gray-200 px-3 py-2.5 flex items-end gap-2 shrink-0 bg-white">
               <textarea
                 ref={textareaRef}
-                rows={1}
+                rows={3}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -327,7 +327,7 @@ export default function ChatIntake({ onClose, user }) {
                     : hasMissingRequiredField ? 'Fill in city, pincode, and concerned person above to start…'
                       : 'Type your message...'
                 }
-                className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-2xl bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none overflow-y-auto leading-relaxed max-h-28"
+                className="flex-1 px-3 py-2 text-xs text-black border border-gray-300 rounded-2xl bg-[#eaf4ff] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none overflow-y-auto leading-relaxed max-h-40"
               />
               <button
                 type="submit"
